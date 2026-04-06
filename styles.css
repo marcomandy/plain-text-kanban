@@ -175,6 +175,106 @@
 	cursor: text;
 }
 
+/* Labels */
+
+.kanban-card-labels {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	margin-bottom: 4px;
+	align-items: center;
+}
+
+.kanban-label {
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	padding: 1px 8px;
+	border-radius: 10px;
+	font-size: 11px;
+	font-weight: 500;
+	line-height: 1.5;
+	white-space: nowrap;
+	cursor: default;
+}
+
+.kanban-label-name {
+	cursor: pointer;
+}
+
+.kanban-label-delete {
+	background: none;
+	border: none;
+	color: inherit;
+	cursor: pointer;
+	font-size: 13px;
+	line-height: 1;
+	padding: 0 1px;
+	opacity: 0;
+	transition: opacity 0.15s;
+	margin-left: 2px;
+}
+
+.kanban-label:hover .kanban-label-delete {
+	opacity: 0.7;
+}
+
+.kanban-label-delete:hover {
+	opacity: 1;
+}
+
+.kanban-label-add {
+	background: none;
+	border: 1px dashed var(--text-faint);
+	color: var(--text-faint);
+	border-radius: 10px;
+	padding: 0 7px;
+	font-size: 12px;
+	line-height: 1.5;
+	cursor: pointer;
+	transition: color 0.15s, border-color 0.15s;
+	opacity: 0;
+}
+
+.kanban-card:hover .kanban-label-add {
+	opacity: 1;
+}
+
+.kanban-label-add:hover {
+	color: var(--text-muted);
+	border-color: var(--text-muted);
+}
+
+/* Label editing */
+
+.kanban-label-edit-container {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+}
+
+.kanban-label-name-input {
+	width: 70px;
+	background: var(--background-primary);
+	border: 1px solid var(--interactive-accent);
+	border-radius: 4px;
+	color: var(--text-normal);
+	font-size: 11px;
+	padding: 1px 4px;
+	outline: none;
+	font-family: inherit;
+}
+
+.kanban-label-color-input {
+	width: 22px;
+	height: 22px;
+	padding: 0;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	cursor: pointer;
+	background: none;
+}
+
 .kanban-card-body {
 	font-size: 12px;
 	color: var(--text-muted);

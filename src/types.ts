@@ -10,4 +10,5 @@ export interface KanbanColumn {
 
 export interface KanbanBoard {
 	columns: KanbanColumn[];
+	labelColors: Record<string, string>;
 }

@@ -12,7 +12,7 @@ interface DragState {
 }
 
 export class KanbanView extends ItemView {
-	private board: KanbanBoard = {columns: []};
+	private board: KanbanBoard = {columns: [], labelColors: {}};
 	private filePath = '';
 	private isWriting = false;
 	private dragState: DragState | null = null;
@@ -253,8 +253,12 @@ export class KanbanView extends ItemView {
 		cardEl.dataset.cardIndex = String(cardIndex);
 		cardEl.draggable = true;
 
+		// Extract tags and display title
+		const tags = this.extractTags(card.title);
+		const displayTitle = this.getTitleWithoutTags(card.title);
+
 		const titleEl = cardEl.createDiv({cls: 'kanban-card-title'});
-		titleEl.setText(card.title);
+		titleEl.setText(displayTitle);
 
 		const deleteCardBtn = cardEl.createEl('button', {cls: 'kanban-card-delete', attr: {'aria-label': 'Delete card'}});
 		deleteCardBtn.setText('\u00D7');
@@ -266,6 +270,18 @@ export class KanbanView extends ItemView {
 		titleEl.addEventListener('click', (e) => {
 			e.stopPropagation();
 			this.startEditingCardTitle(colIndex, cardIndex, titleEl, card, cardEl);
+		});
+
+		// Labels row
+		const labelsEl = cardEl.createDiv({cls: 'kanban-card-labels'});
+		for (const tag of tags) {
+			this.renderLabel(labelsEl, tag, colIndex, cardIndex, card);
+		}
+		const addLabelBtn = labelsEl.createEl('button', {cls: 'kanban-label-add', attr: {'aria-label': 'Add label'}});
+		addLabelBtn.setText('+');
+		addLabelBtn.addEventListener('click', (e) => {
+			e.stopPropagation();
+			this.addLabelToCard(colIndex, cardIndex, card);
 		});
 
 		if (card.rawBodyLines.length > 0 && this.renderChild) {
@@ -705,6 +721,176 @@ export class KanbanView extends ItemView {
 		if (nonEmpty.length === 0) return '\t\t';
 		const match = nonEmpty[0]?.match(/^(\s+)/);
 		return match?.[1] ?? '\t\t';
+	}
+
+	// --- Labels ---
+
+	private static readonly DEFAULT_LABEL_COLORS = [
+		'#e03e3e', '#d9730d', '#dfab01', '#0f7b6c', '#2f80ed',
+		'#6940a5', '#ad1a72', '#64748b', '#0ea5e9', '#10b981',
+	];
+
+	private extractTags(title: string): string[] {
+		const matches = title.match(/#([\w][\w-]*)/g);
+		if (!matches) return [];
+		return matches.map(m => m.substring(1));
+	}
+
+	private getTitleWithoutTags(title: string): string {
+		return title.replace(/#[\w][\w-]*/g, '').replace(/\s{2,}/g, ' ').trim();
+	}
+
+	private getLabelColor(tag: string): string {
+		if (this.board.labelColors[tag]) return this.board.labelColors[tag];
+		// Assign a deterministic default color based on tag hash
+		let hash = 0;
+		for (let i = 0; i < tag.length; i++) {
+			hash = ((hash << 5) - hash + tag.charCodeAt(i)) | 0;
+		}
+		const idx = Math.abs(hash) % KanbanView.DEFAULT_LABEL_COLORS.length;
+		return KanbanView.DEFAULT_LABEL_COLORS[idx] ?? '#64748b';
+	}
+
+	private renderLabel(
+		container: HTMLElement,
+		tag: string,
+		colIndex: number,
+		cardIndex: number,
+		card: KanbanCard,
+	): void {
+		const color = this.getLabelColor(tag);
+		const labelEl = container.createDiv({cls: 'kanban-label'});
+		labelEl.style.backgroundColor = color;
+		labelEl.style.color = this.getContrastColor(color);
+
+		const nameSpan = labelEl.createSpan({cls: 'kanban-label-name', text: tag});
+
+		const deleteBtn = labelEl.createEl('button', {cls: 'kanban-label-delete', attr: {'aria-label': 'Remove label'}});
+		deleteBtn.setText('\u00D7');
+		deleteBtn.addEventListener('click', (e) => {
+			e.stopPropagation();
+			this.removeLabelFromCard(colIndex, cardIndex, card, tag);
+		});
+
+		nameSpan.addEventListener('click', (e) => {
+			e.stopPropagation();
+			this.startEditingLabel(labelEl, tag);
+		});
+	}
+
+	private getContrastColor(hex: string): string {
+		const r = parseInt(hex.slice(1, 3), 16);
+		const g = parseInt(hex.slice(3, 5), 16);
+		const b = parseInt(hex.slice(5, 7), 16);
+		const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+		return luminance > 0.55 ? '#000000' : '#ffffff';
+	}
+
+	private async addLabelToCard(colIndex: number, cardIndex: number, card: KanbanCard): Promise<void> {
+		const existing = this.extractTags(card.title);
+		let newTag = 'label';
+		let i = 1;
+		while (existing.includes(newTag)) {
+			newTag = `label${i++}`;
+		}
+		this.pushUndo();
+		card.title = card.title.trimEnd() + ` #${newTag}`;
+		// Assign a color if not yet known
+		if (!this.board.labelColors[newTag]) {
+			this.board.labelColors[newTag] = this.getLabelColor(newTag);
+		}
+		await this.saveBoard();
+		await this.render();
+	}
+
+	private async removeLabelFromCard(colIndex: number, cardIndex: number, card: KanbanCard, tag: string): Promise<void> {
+		this.pushUndo();
+		card.title = card.title.replace(new RegExp(`\\s*#${this.escapeRegex(tag)}`, 'g'), '');
+		await this.saveBoard();
+		await this.render();
+	}
+
+	private escapeRegex(str: string): string {
+		return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+	}
+
+	private startEditingLabel(labelEl: HTMLElement, oldTag: string): void {
+		if (labelEl.querySelector('.kanban-label-edit-container')) return;
+
+		const color = this.getLabelColor(oldTag);
+
+		const editContainer = document.createElement('div');
+		editContainer.className = 'kanban-label-edit-container';
+
+		const nameInput = document.createElement('input');
+		nameInput.type = 'text';
+		nameInput.value = oldTag;
+		nameInput.className = 'kanban-label-name-input';
+
+		const colorInput = document.createElement('input');
+		colorInput.type = 'color';
+		colorInput.value = color;
+		colorInput.className = 'kanban-label-color-input';
+
+		editContainer.appendChild(nameInput);
+		editContainer.appendChild(colorInput);
+
+		labelEl.empty();
+		labelEl.appendChild(editContainer);
+		labelEl.style.backgroundColor = 'var(--background-primary)';
+		labelEl.style.color = '';
+		nameInput.focus();
+		nameInput.select();
+
+		let saved = false;
+		const save = async () => {
+			if (saved) return;
+			saved = true;
+			const newTag = nameInput.value.trim().replace(/\s+/g, '-').replace(/^#/, '');
+			const newColor = colorInput.value;
+			const colorWasChanged = newColor !== color;
+			if (newTag && (newTag !== oldTag || colorWasChanged)) {
+				this.pushUndo();
+				delete this.board.labelColors[oldTag];
+				if (colorWasChanged || !this.board.labelColors[newTag]) {
+					// Use the picked color if explicitly changed, otherwise keep existing
+					this.board.labelColors[newTag] = newColor;
+				}
+				// Rename tag in all card titles
+				if (newTag !== oldTag) {
+					for (const col of this.board.columns) {
+						for (const card of col.cards) {
+							card.title = card.title.replace(
+								new RegExp(`#${this.escapeRegex(oldTag)}\\b`, 'g'),
+								`#${newTag}`,
+							);
+						}
+					}
+				}
+				await this.saveBoard();
+			}
+			await this.render();
+		};
+
+		const handleBlur = (e: FocusEvent) => {
+			// Only save when focus leaves both inputs
+			const related = e.relatedTarget as HTMLElement | null;
+			if (related && editContainer.contains(related)) return;
+			save();
+		};
+
+		nameInput.addEventListener('blur', handleBlur);
+		colorInput.addEventListener('blur', handleBlur);
+		nameInput.addEventListener('keydown', (e) => {
+			if (e.key === 'Enter') { e.preventDefault(); nameInput.blur(); colorInput.blur(); save(); }
+			else if (e.key === 'Escape') { saved = true; this.render(); }
+		});
+		colorInput.addEventListener('change', () => {
+			// Live preview: update label background as user picks color
+			labelEl.style.backgroundColor = colorInput.value;
+		});
+		nameInput.addEventListener('click', (e) => e.stopPropagation());
+		colorInput.addEventListener('click', (e) => e.stopPropagation());
 	}
 
 	// --- Helpers ---

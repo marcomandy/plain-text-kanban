@@ -1,12 +1,23 @@
 import {KanbanBoard, KanbanColumn, KanbanCard} from './types';
 
+const LABEL_COLORS_RE = /^<!--\s*kanban-labels:\s*(\{.*\})\s*-->$/;
+
 export function parseKanban(content: string): KanbanBoard {
 	const lines = content.split('\n');
 	const columns: KanbanColumn[] = [];
 	let currentColumn: KanbanColumn | null = null;
 	let currentCard: KanbanCard | null = null;
+	let labelColors: Record<string, string> = {};
 
 	for (const line of lines) {
+		const labelMatch = line.match(LABEL_COLORS_RE);
+		if (labelMatch?.[1]) {
+			try {
+				labelColors = JSON.parse(labelMatch[1]);
+			} catch { /* ignore malformed */ }
+			continue;
+		}
+
 		const columnMatch = line.match(/^- # (.+)/);
 		if (columnMatch?.[1]) {
 			currentCard = null;
@@ -37,5 +48,5 @@ export function parseKanban(content: string): KanbanBoard {
 		}
 	}
 
-	return {columns};
+	return {columns, labelColors};
 }
