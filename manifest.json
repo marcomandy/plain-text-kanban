@@ -1,0 +1,9 @@
+{
+	"id": "plain-text-kanban",
+	"name": "Plain Text Kanban",
+	"version": "1.0.0",
+	"minAppVersion": "1.0.0",
+	"description": "Renders nested markdown lists as kanban boards with drag and drop.",
+	"author": "",
+	"isDesktopOnly": false
+}
