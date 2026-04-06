@@ -102,6 +102,10 @@ export class KanbanView extends ItemView {
 	}
 
 	private async render(): Promise<void> {
+		// Save scroll position
+		const existingBoard = this.contentEl.querySelector('.kanban-board') as HTMLElement | null;
+		const savedScrollLeft = existingBoard?.scrollLeft ?? 0;
+
 		// Clean up previous render components
 		if (this.renderChild) {
 			this.removeChild(this.renderChild);
@@ -112,12 +116,14 @@ export class KanbanView extends ItemView {
 		const container = this.contentEl;
 		container.empty();
 
+		const boardEl = container.createDiv({cls: 'kanban-board'});
+
 		if (this.board.columns.length === 0) {
-			container.createEl('p', {text: 'No kanban data found in this file.'});
+			const addColBtn = boardEl.createDiv({cls: 'kanban-add-column-btn'});
+			addColBtn.setText('+ Add column');
+			addColBtn.addEventListener('click', () => this.addColumn());
 			return;
 		}
-
-		const boardEl = container.createDiv({cls: 'kanban-board'});
 
 		const renderPromises: Promise<void>[] = [];
 		this.board.columns.forEach((column, colIndex) => {
@@ -125,6 +131,14 @@ export class KanbanView extends ItemView {
 		});
 
 		await Promise.all(renderPromises);
+
+		// Add column button
+		const addColBtn = boardEl.createDiv({cls: 'kanban-add-column-btn'});
+		addColBtn.setText('+ Add column');
+		addColBtn.addEventListener('click', () => this.addColumn());
+
+		// Restore scroll position
+		boardEl.scrollLeft = savedScrollLeft;
 	}
 
 	private async renderColumn(boardEl: HTMLElement, column: KanbanColumn, colIndex: number): Promise<void> {
@@ -134,12 +148,20 @@ export class KanbanView extends ItemView {
 		// Column header
 		const headerEl = columnEl.createDiv({cls: 'kanban-column-header'});
 		headerEl.draggable = true;
-		const titleSpan = headerEl.createEl('span', {text: column.title, cls: 'kanban-column-title'});
-		headerEl.createEl('span', {text: String(column.cards.length), cls: 'kanban-column-count'});
+		const headerLeft = headerEl.createDiv({cls: 'kanban-column-header-left'});
+		const titleSpan = headerLeft.createEl('span', {text: column.title, cls: 'kanban-column-title'});
+		headerLeft.createEl('span', {text: String(column.cards.length), cls: 'kanban-column-count'});
 
 		titleSpan.addEventListener('click', (e) => {
 			e.stopPropagation();
 			this.startEditingColumnTitle(colIndex, headerEl, column);
+		});
+
+		const deleteBtn = headerEl.createEl('button', {cls: 'kanban-column-delete', attr: {'aria-label': 'Delete column'}});
+		deleteBtn.setText('\u00D7');
+		deleteBtn.addEventListener('click', (e) => {
+			e.stopPropagation();
+			this.deleteColumn(colIndex);
 		});
 
 		this.setupColumnDrag(headerEl, columnEl, colIndex);
@@ -153,6 +175,11 @@ export class KanbanView extends ItemView {
 		});
 
 		await Promise.all(cardPromises);
+
+		// Add card button
+		const addCardBtn = bodyEl.createDiv({cls: 'kanban-add-card-btn'});
+		addCardBtn.setText('+ Add card');
+		addCardBtn.addEventListener('click', () => this.addCard(colIndex));
 
 		this.setupCardDropZone(bodyEl, colIndex);
 		this.setupColumnDropZone(columnEl, colIndex);
@@ -410,12 +437,39 @@ export class KanbanView extends ItemView {
 		await this.render();
 	}
 
+	// --- Add / Delete operations ---
+
+	private async addCard(colIndex: number): Promise<void> {
+		const column = this.board.columns[colIndex];
+		if (!column) return;
+		column.cards.push({title: 'New card', rawBodyLines: []});
+		await this.saveBoard();
+		await this.render();
+	}
+
+	private async addColumn(): Promise<void> {
+		this.board.columns.push({title: 'New column', cards: []});
+		await this.saveBoard();
+		await this.render();
+		// Scroll to the new column
+		const boardEl = this.contentEl.querySelector('.kanban-board') as HTMLElement | null;
+		if (boardEl) boardEl.scrollLeft = boardEl.scrollWidth;
+	}
+
+	private async deleteColumn(colIndex: number): Promise<void> {
+		const column = this.board.columns[colIndex];
+		if (!column) return;
+		this.board.columns.splice(colIndex, 1);
+		await this.saveBoard();
+		await this.render();
+	}
+
 	// --- Inline Editing ---
 
 	private startEditingColumnTitle(colIndex: number, headerEl: HTMLElement, column: KanbanColumn): void {
 		if (headerEl.querySelector('.kanban-edit-input')) return;
 
-		const titleSpan = headerEl.querySelector('.kanban-column-title');
+		const titleSpan = headerEl.querySelector('.kanban-column-title') ?? headerEl.querySelector('.kanban-column-header-left .kanban-column-title');
 		if (!titleSpan) return;
 
 		const input = document.createElement('input');
