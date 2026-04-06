@@ -1,4 +1,4 @@
-import {ItemView, WorkspaceLeaf, TFile, MarkdownRenderer, Component, ViewStateResult} from 'obsidian';
+import {ItemView, WorkspaceLeaf, TFile, MarkdownRenderer, Component, ViewStateResult, Scope} from 'obsidian';
 import {KanbanBoard, KanbanColumn, KanbanCard} from './types';
 import {parseKanban} from './parser';
 import {serializeKanban} from './serializer';
@@ -17,6 +17,9 @@ export class KanbanView extends ItemView {
 	private isWriting = false;
 	private dragState: DragState | null = null;
 	private renderChild: Component | null = null;
+	private undoStack: string[] = [];
+	private redoStack: string[] = [];
+	private static readonly MAX_HISTORY = 50;
 
 	constructor(leaf: WorkspaceLeaf) {
 		super(leaf);
@@ -40,6 +43,8 @@ export class KanbanView extends ItemView {
 	async onOpen(): Promise<void> {
 		this.contentEl.addClass('kanban-view-content');
 
+		this.scope = new Scope(this.app.scope);
+
 		this.addAction('file-text', 'View as markdown', () => {
 			this.leaf.setViewState({
 				type: 'markdown',
@@ -54,6 +59,22 @@ export class KanbanView extends ItemView {
 				}
 			})
 		);
+
+		this.scope.register(['Mod'], 'z', (e) => {
+			e.preventDefault();
+			this.undo();
+			return false;
+		});
+		this.scope.register(['Mod', 'Shift'], 'z', (e) => {
+			e.preventDefault();
+			this.redo();
+			return false;
+		});
+		this.scope.register(['Mod'], 'y', (e) => {
+			e.preventDefault();
+			this.redo();
+			return false;
+		});
 	}
 
 	async onClose(): Promise<void> {
@@ -101,10 +122,42 @@ export class KanbanView extends ItemView {
 		}
 	}
 
+	private pushUndo(): void {
+		this.undoStack.push(serializeKanban(this.board));
+		if (this.undoStack.length > KanbanView.MAX_HISTORY) {
+			this.undoStack.shift();
+		}
+		this.redoStack.length = 0;
+	}
+
+	private async undo(): Promise<void> {
+		if (this.undoStack.length === 0) return;
+		this.redoStack.push(serializeKanban(this.board));
+		const prev = this.undoStack.pop()!;
+		this.board = parseKanban(prev);
+		await this.saveBoard();
+		await this.render();
+	}
+
+	private async redo(): Promise<void> {
+		if (this.redoStack.length === 0) return;
+		this.undoStack.push(serializeKanban(this.board));
+		const next = this.redoStack.pop()!;
+		this.board = parseKanban(next);
+		await this.saveBoard();
+		await this.render();
+	}
+
 	private async render(): Promise<void> {
-		// Save scroll position
+		// Save scroll positions
 		const existingBoard = this.contentEl.querySelector('.kanban-board') as HTMLElement | null;
 		const savedScrollLeft = existingBoard?.scrollLeft ?? 0;
+		const savedColumnScrollTops: number[] = [];
+		if (existingBoard) {
+			existingBoard.querySelectorAll('.kanban-column-body').forEach((body) => {
+				savedColumnScrollTops.push((body as HTMLElement).scrollTop);
+			});
+		}
 
 		// Clean up previous render components
 		if (this.renderChild) {
@@ -137,8 +190,13 @@ export class KanbanView extends ItemView {
 		addColBtn.setText('+ Add column');
 		addColBtn.addEventListener('click', () => this.addColumn());
 
-		// Restore scroll position
+		// Restore scroll positions
 		boardEl.scrollLeft = savedScrollLeft;
+		boardEl.querySelectorAll('.kanban-column-body').forEach((body, i) => {
+			if (savedColumnScrollTops[i] !== undefined) {
+				(body as HTMLElement).scrollTop = savedColumnScrollTops[i];
+			}
+		});
 	}
 
 	private async renderColumn(boardEl: HTMLElement, column: KanbanColumn, colIndex: number): Promise<void> {
@@ -197,6 +255,13 @@ export class KanbanView extends ItemView {
 
 		const titleEl = cardEl.createDiv({cls: 'kanban-card-title'});
 		titleEl.setText(card.title);
+
+		const deleteCardBtn = cardEl.createEl('button', {cls: 'kanban-card-delete', attr: {'aria-label': 'Delete card'}});
+		deleteCardBtn.setText('\u00D7');
+		deleteCardBtn.addEventListener('click', (e) => {
+			e.stopPropagation();
+			this.deleteCard(colIndex, cardIndex);
+		});
 
 		titleEl.addEventListener('click', (e) => {
 			e.stopPropagation();
@@ -385,6 +450,7 @@ export class KanbanView extends ItemView {
 
 		if (fromCol === toCol && fromIndex === toIndex) return;
 
+		this.pushUndo();
 		const card = sourceColumn.cards.splice(fromIndex, 1)[0];
 		if (!card) return;
 
@@ -401,6 +467,7 @@ export class KanbanView extends ItemView {
 	private moveColumn(fromIndex: number, toIndex: number): void {
 		if (fromIndex === toIndex || fromIndex === toIndex - 1) return;
 
+		this.pushUndo();
 		const column = this.board.columns.splice(fromIndex, 1)[0];
 		if (!column) return;
 
@@ -416,6 +483,8 @@ export class KanbanView extends ItemView {
 	private async toggleCheckbox(colIndex: number, cardIndex: number, checkboxIndex: number): Promise<void> {
 		const card = this.board.columns[colIndex]?.cards[cardIndex];
 		if (!card) return;
+
+		this.pushUndo();
 
 		let count = 0;
 		for (let i = 0; i < card.rawBodyLines.length; i++) {
@@ -442,12 +511,14 @@ export class KanbanView extends ItemView {
 	private async addCard(colIndex: number): Promise<void> {
 		const column = this.board.columns[colIndex];
 		if (!column) return;
+		this.pushUndo();
 		column.cards.push({title: 'New card', rawBodyLines: []});
 		await this.saveBoard();
 		await this.render();
 	}
 
 	private async addColumn(): Promise<void> {
+		this.pushUndo();
 		this.board.columns.push({title: 'New column', cards: []});
 		await this.saveBoard();
 		await this.render();
@@ -459,7 +530,17 @@ export class KanbanView extends ItemView {
 	private async deleteColumn(colIndex: number): Promise<void> {
 		const column = this.board.columns[colIndex];
 		if (!column) return;
+		this.pushUndo();
 		this.board.columns.splice(colIndex, 1);
+		await this.saveBoard();
+		await this.render();
+	}
+
+	private async deleteCard(colIndex: number, cardIndex: number): Promise<void> {
+		const column = this.board.columns[colIndex];
+		if (!column || !column.cards[cardIndex]) return;
+		this.pushUndo();
+		column.cards.splice(cardIndex, 1);
 		await this.saveBoard();
 		await this.render();
 	}
@@ -488,6 +569,7 @@ export class KanbanView extends ItemView {
 			saved = true;
 			const newTitle = input.value.trim();
 			if (newTitle && newTitle !== column.title) {
+				this.pushUndo();
 				column.title = newTitle;
 				await this.saveBoard();
 			}
@@ -535,6 +617,7 @@ export class KanbanView extends ItemView {
 			saved = true;
 			const newTitle = input.value.trim();
 			if (newTitle && newTitle !== card.title) {
+				this.pushUndo();
 				card.title = newTitle;
 				await this.saveBoard();
 			}
@@ -589,13 +672,17 @@ export class KanbanView extends ItemView {
 			if (saved) return;
 			saved = true;
 			const newText = textarea.value;
+			const oldBody = card.rawBodyLines.join('\n');
 			if (newText.trim() === '') {
+				if (oldBody.trim() !== '') this.pushUndo();
 				card.rawBodyLines = [];
 			} else {
-				card.rawBodyLines = newText.split('\n').map(line => {
+				const newLines = newText.split('\n').map(line => {
 					if (line.trim() === '') return '';
 					return prefix + line;
 				});
+				if (newLines.join('\n') !== oldBody) this.pushUndo();
+				card.rawBodyLines = newLines;
 			}
 			await this.saveBoard();
 			cardEl.draggable = true;

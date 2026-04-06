@@ -123,6 +123,7 @@
 	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 	transition: box-shadow 0.15s, opacity 0.15s;
 	border: 1px solid var(--background-modifier-border);
+	position: relative;
 }
 
 .kanban-card:hover {
@@ -140,6 +141,31 @@
 .kanban-card.drop-above {
 	border-top: 3px solid var(--interactive-accent);
 	margin-top: -3px;
+}
+
+.kanban-card-delete {
+	position: absolute;
+	top: 4px;
+	right: 4px;
+	background: none;
+	border: none;
+	color: var(--text-muted);
+	cursor: pointer;
+	font-size: 16px;
+	line-height: 1;
+	padding: 2px 4px;
+	border-radius: 4px;
+	opacity: 0;
+	transition: opacity 0.15s, color 0.15s;
+}
+
+.kanban-card:hover .kanban-card-delete {
+	opacity: 1;
+}
+
+.kanban-card-delete:hover {
+	color: var(--text-error);
+	background: var(--background-modifier-hover);
 }
 
 .kanban-card-title {
