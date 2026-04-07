@@ -544,7 +544,8 @@
 }
 
 .kanban-swimlane {
-	flex: 1 1 0;
+	flex: 0 0 auto;
+	height: calc(100vh - 100px);
 	min-height: 300px;
 	display: flex;
 	flex-direction: column;
