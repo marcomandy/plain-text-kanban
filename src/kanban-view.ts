@@ -787,20 +787,58 @@ export class KanbanView extends ItemView {
 	}
 
 	private async addLabelToCard(colIndex: number, cardIndex: number, card: KanbanCard): Promise<void> {
-		const existing = this.extractTags(card.title);
-		let newTag = 'label';
-		let i = 1;
-		while (existing.includes(newTag)) {
-			newTag = `label${i++}`;
+		// Find the labels container for this card
+		const cardEl = this.contentEl.querySelectorAll('.kanban-card')[
+			this.getGlobalCardIndex(colIndex, cardIndex)
+		] as HTMLElement | undefined;
+		if (!cardEl) return;
+		const labelsEl = cardEl.querySelector('.kanban-card-labels') as HTMLElement | null;
+		if (!labelsEl) return;
+		const addBtn = labelsEl.querySelector('.kanban-label-add') as HTMLElement | null;
+		if (!addBtn || labelsEl.querySelector('.kanban-label-new-input')) return;
+
+		addBtn.style.display = 'none';
+
+		const input = document.createElement('input');
+		input.type = 'text';
+		input.placeholder = 'label name';
+		input.className = 'kanban-label-new-input';
+		labelsEl.appendChild(input);
+		input.focus();
+
+		let done = false;
+		const finish = async (commit: boolean) => {
+			if (done) return;
+			done = true;
+			const newTag = input.value.trim().replace(/\s+/g, '-').replace(/^#/, '');
+			if (commit && newTag) {
+				const existing = this.extractTags(card.title);
+				if (!existing.includes(newTag)) {
+					this.pushUndo();
+					card.title = card.title.trimEnd() + ` #${newTag}`;
+					if (!this.board.labelColors[newTag]) {
+						this.board.labelColors[newTag] = this.getLabelColor(newTag);
+					}
+					await this.saveBoard();
+				}
+			}
+			await this.render();
+		};
+
+		input.addEventListener('blur', () => finish(true));
+		input.addEventListener('keydown', (e) => {
+			if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+			else if (e.key === 'Escape') { finish(false); }
+		});
+		input.addEventListener('click', (e) => e.stopPropagation());
+	}
+
+	private getGlobalCardIndex(colIndex: number, cardIndex: number): number {
+		let idx = 0;
+		for (let c = 0; c < colIndex; c++) {
+			idx += this.board.columns[c]?.cards.length ?? 0;
 		}
-		this.pushUndo();
-		card.title = card.title.trimEnd() + ` #${newTag}`;
-		// Assign a color if not yet known
-		if (!this.board.labelColors[newTag]) {
-			this.board.labelColors[newTag] = this.getLabelColor(newTag);
-		}
-		await this.saveBoard();
-		await this.render();
+		return idx + cardIndex;
 	}
 
 	private async removeLabelFromCard(colIndex: number, cardIndex: number, card: KanbanCard, tag: string): Promise<void> {

@@ -245,6 +245,19 @@
 	border-color: var(--text-muted);
 }
 
+.kanban-label-new-input {
+	width: 80px;
+	background: var(--background-primary);
+	border: 1px solid var(--interactive-accent);
+	border-radius: 10px;
+	color: var(--text-normal);
+	font-size: 11px;
+	padding: 1px 8px;
+	line-height: 1.5;
+	outline: none;
+	font-family: inherit;
+}
+
 /* Label editing */
 
 .kanban-label-edit-container {
