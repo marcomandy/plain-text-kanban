@@ -267,6 +267,12 @@ export class KanbanView extends ItemView {
 	private renderSwimlaneHeader(swimlaneEl: HTMLElement, swimlane: Swimlane, index: number): void {
 		const headerEl = swimlaneEl.createDiv({cls: 'kanban-swimlane-header'});
 
+		headerEl.addEventListener('click', (e) => {
+			const target = e.target as HTMLElement;
+			if (target.closest('.kanban-swimlane-label-remove') || target.closest('.kanban-swimlane-delete') || target.closest('.kanban-swimlane-label-dropdown')) return;
+			this.showSwimlaneAddLabel(headerEl, index);
+		});
+
 		const labelsEl = headerEl.createDiv({cls: 'kanban-swimlane-labels'});
 		if (swimlane.labels.length === 0) {
 			labelsEl.createSpan({cls: 'kanban-swimlane-all-labels', text: 'All labels'});
@@ -289,10 +295,6 @@ export class KanbanView extends ItemView {
 
 		const addLabelBtn = headerEl.createEl('button', {cls: 'kanban-swimlane-add-label'});
 		addLabelBtn.setText('+ Label');
-		addLabelBtn.addEventListener('click', (e) => {
-			e.stopPropagation();
-			this.showSwimlaneAddLabel(headerEl, index);
-		});
 
 		if (this.board.swimlanes.length > 1) {
 			const deleteBtn = headerEl.createEl('button', {cls: 'kanban-swimlane-delete', attr: {'aria-label': 'Delete swimlane'}});
