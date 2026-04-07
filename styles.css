@@ -66,15 +66,15 @@
 	cursor: pointer;
 	font-size: 18px;
 	line-height: 1;
-	padding: 0 4px;
+	width: 24px;
+	height: 24px;
+	padding: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
 	border-radius: 4px;
-	opacity: 0;
-	transition: opacity 0.15s, color 0.15s;
+	transition: color 0.15s;
 	flex-shrink: 0;
-}
-
-.kanban-column-header:hover .kanban-column-delete {
-	opacity: 1;
 }
 
 .kanban-column-delete:hover {
@@ -153,14 +153,14 @@
 	cursor: pointer;
 	font-size: 16px;
 	line-height: 1;
-	padding: 2px 4px;
+	width: 22px;
+	height: 22px;
+	padding: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
 	border-radius: 4px;
-	opacity: 0;
-	transition: opacity 0.15s, color 0.15s;
-}
-
-.kanban-card:hover .kanban-card-delete {
-	opacity: 1;
+	transition: color 0.15s;
 }
 
 .kanban-card-delete:hover {
@@ -209,14 +209,19 @@
 	cursor: pointer;
 	font-size: 13px;
 	line-height: 1;
-	padding: 0 1px;
-	opacity: 0;
+	width: 16px;
+	height: 16px;
+	padding: 0;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 50%;
 	transition: opacity 0.15s;
 	margin-left: 2px;
-}
-
-.kanban-label:hover .kanban-label-delete {
-	opacity: 0.7;
+	opacity: 0.6;
+	vertical-align: middle;
+	position: relative;
+	top: -1px;
 }
 
 .kanban-label-delete:hover {
@@ -229,15 +234,10 @@
 	color: var(--text-faint);
 	border-radius: 10px;
 	padding: 0 7px;
-	font-size: 12px;
+	font-size: 11px;
 	line-height: 1.5;
 	cursor: pointer;
 	transition: color 0.15s, border-color 0.15s;
-	opacity: 0;
-}
-
-.kanban-card:hover .kanban-label-add {
-	opacity: 1;
 }
 
 .kanban-label-add:hover {

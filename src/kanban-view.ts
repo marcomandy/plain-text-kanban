@@ -278,7 +278,7 @@ export class KanbanView extends ItemView {
 			this.renderLabel(labelsEl, tag, colIndex, cardIndex, card);
 		}
 		const addLabelBtn = labelsEl.createEl('button', {cls: 'kanban-label-add', attr: {'aria-label': 'Add label'}});
-		addLabelBtn.setText('+');
+		addLabelBtn.setText('+ Add label');
 		addLabelBtn.addEventListener('click', (e) => {
 			e.stopPropagation();
 			this.addLabelToCard(colIndex, cardIndex, card);
@@ -322,6 +322,11 @@ export class KanbanView extends ItemView {
 
 	private setupCardDrag(cardEl: HTMLElement, colIndex: number, cardIndex: number): void {
 		cardEl.addEventListener('dragstart', (e) => {
+			const target = e.target as HTMLElement;
+			if (target.closest('.kanban-card-labels') || target.closest('.kanban-label-edit-container')) {
+				e.preventDefault();
+				return;
+			}
 			e.stopPropagation();
 			this.dragState = {type: 'card', sourceColIndex: colIndex, sourceCardIndex: cardIndex};
 			if (e.dataTransfer) {
