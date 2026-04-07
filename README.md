@@ -17,6 +17,9 @@ An [Obsidian](https://obsidian.md) plugin that turns simple nested markdown list
 3. Copy the three files into that folder
 4. Restart Obsidian and enable the plugin in **Settings → Community plugins**
 
+## How to use
+To open a board, run **Open current file as kanban board** from the command palette, or right-click a markdown file in the file explorer and choose **Open as kanban board** from the context menu. The kanban view will load that `.md` file and keep the text file readable while giving you full board interaction.
+
 ## File format
 
 ```markdown
