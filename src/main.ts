@@ -1,4 +1,4 @@
-import {MarkdownView, Plugin} from 'obsidian';
+import {MarkdownView, Plugin, TFile, Menu} from 'obsidian';
 import {KanbanView, KANBAN_VIEW_TYPE} from './kanban-view';
 
 export default class KanbanPlugin extends Plugin {
@@ -12,16 +12,32 @@ export default class KanbanPlugin extends Plugin {
 				const view = this.app.workspace.getActiveViewOfType(MarkdownView);
 				if (view?.file) {
 					if (!checking) {
-						const filePath = view.file.path;
-						this.app.workspace.getLeaf(false).setViewState({
-							type: KANBAN_VIEW_TYPE,
-							state: {file: filePath},
-						});
+						this.openAsKanban(view.file.path);
 					}
 					return true;
 				}
 				return false;
 			},
+		});
+
+		this.registerEvent(
+			this.app.workspace.on('file-menu', (menu: Menu, file) => {
+				if (file instanceof TFile && file.extension === 'md') {
+					menu.addItem((item) => {
+						item
+							.setTitle('Open as kanban board')
+							.setIcon('columns-3')
+							.onClick(() => this.openAsKanban(file.path));
+					});
+				}
+			})
+		);
+	}
+
+	private openAsKanban(filePath: string): void {
+		this.app.workspace.getLeaf(false).setViewState({
+			type: KANBAN_VIEW_TYPE,
+			state: {file: filePath},
 		});
 	}
 }
