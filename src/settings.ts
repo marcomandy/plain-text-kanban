@@ -6,6 +6,7 @@ export interface KanbanPluginSettings {
 	hideAddLabelButtons: boolean;
 	hideAddDescription: boolean;
 	hoverOnlyButtons: boolean;
+	hideSwimlanes: boolean;
 }
 
 export const DEFAULT_SETTINGS: KanbanPluginSettings = {
@@ -13,6 +14,7 @@ export const DEFAULT_SETTINGS: KanbanPluginSettings = {
 	hideAddLabelButtons: false,
 	hideAddDescription: false,
 	hoverOnlyButtons: false,
+	hideSwimlanes: false,
 };
 
 export class KanbanSettingTab extends PluginSettingTab {
@@ -71,6 +73,18 @@ export class KanbanSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.hoverOnlyButtons)
 					.onChange(async (value) => {
 						this.plugin.settings.hoverOnlyButtons = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName('Hide swimlanes')
+			.setDesc('Hide the swimlane UI and show a single unfiltered board.')
+			.addToggle(toggle =>
+				toggle
+					.setValue(this.plugin.settings.hideSwimlanes)
+					.onChange(async (value) => {
+						this.plugin.settings.hideSwimlanes = value;
 						await this.plugin.saveSettings();
 					})
 			);

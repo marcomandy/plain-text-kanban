@@ -533,3 +533,202 @@
 .kanban-hover-buttons .kanban-card:hover .kanban-card-delete {
 	opacity: 1;
 }
+
+/* Swimlanes */
+
+.kanban-swimlanes-container {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	overflow-y: auto;
+}
+
+.kanban-swimlane {
+	flex: 1 1 0;
+	min-height: 300px;
+	display: flex;
+	flex-direction: column;
+	border-bottom: 2px solid var(--background-modifier-border);
+}
+
+.kanban-swimlane:last-of-type {
+	border-bottom: none;
+}
+
+.kanban-swimlane .kanban-board {
+	flex: 1;
+	height: auto;
+	min-height: 0;
+}
+
+.kanban-swimlane-header {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 16px;
+	background: var(--background-secondary);
+	border-bottom: 1px solid var(--background-modifier-border);
+	flex-shrink: 0;
+	position: relative;
+}
+
+.kanban-swimlane-labels {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	flex: 1;
+	align-items: center;
+}
+
+.kanban-swimlane-all-labels {
+	color: var(--text-muted);
+	font-size: 13px;
+	font-style: italic;
+}
+
+.kanban-swimlane-label {
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	padding: 2px 8px;
+	border-radius: 10px;
+	font-size: 11px;
+	font-weight: 500;
+	white-space: nowrap;
+	height: 22px;
+	box-sizing: border-box;
+}
+
+.kanban-swimlane-label-remove {
+	background: none;
+	border: none;
+	color: inherit;
+	cursor: pointer;
+	font-size: 13px;
+	line-height: 1;
+	padding: 0;
+	margin-left: 2px;
+	opacity: 0.6;
+	width: 16px;
+	height: 16px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.kanban-swimlane-label-remove:hover {
+	opacity: 1;
+}
+
+.kanban-swimlane-add-label {
+	background: none;
+	border: 1px dashed var(--text-faint);
+	color: var(--text-faint);
+	border-radius: 10px;
+	padding: 2px 8px;
+	font-size: 11px;
+	cursor: pointer;
+	white-space: nowrap;
+	flex-shrink: 0;
+	height: 22px;
+	box-sizing: border-box;
+	line-height: 1.5;
+}
+
+.kanban-swimlane-add-label:hover {
+	color: var(--text-muted);
+	border-color: var(--text-muted);
+}
+
+.kanban-swimlane-delete {
+	background: none;
+	border: none;
+	color: var(--text-muted);
+	cursor: pointer;
+	font-size: 18px;
+	line-height: 1;
+	width: 24px;
+	height: 24px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 4px;
+	flex-shrink: 0;
+	transition: color 0.15s;
+}
+
+.kanban-swimlane-delete:hover {
+	color: var(--text-error);
+	background: var(--background-modifier-hover);
+}
+
+.kanban-add-swimlane-btn {
+	padding: 6px 16px;
+	color: var(--text-muted);
+	font-size: 13px;
+	cursor: pointer;
+	text-align: center;
+	opacity: 0.6;
+	flex-shrink: 0;
+	transition: opacity 0.15s, background 0.15s;
+}
+
+.kanban-add-swimlane-btn:hover {
+	color: var(--text-normal);
+	opacity: 1;
+	background: var(--background-modifier-hover);
+}
+
+.kanban-swimlane-label-dropdown {
+	position: absolute;
+	top: 100%;
+	left: 8px;
+	z-index: 100;
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	padding: 6px;
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+	min-width: 160px;
+	max-height: 220px;
+	display: flex;
+	flex-direction: column;
+}
+
+.kanban-swimlane-label-input {
+	width: 100%;
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	color: var(--text-normal);
+	font-size: 12px;
+	padding: 4px 8px;
+	outline: none;
+	margin-bottom: 4px;
+	box-sizing: border-box;
+	font-family: inherit;
+}
+
+.kanban-swimlane-label-input:focus {
+	border-color: var(--interactive-accent);
+}
+
+.kanban-swimlane-label-options {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	overflow-y: auto;
+	flex: 1;
+}
+
+.kanban-swimlane-label-option {
+	padding: 4px 8px;
+	border-radius: 4px;
+	cursor: pointer;
+	display: flex;
+	align-items: center;
+}
+
+.kanban-swimlane-label-option:hover {
+	background: var(--background-modifier-hover);
+}

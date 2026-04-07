@@ -1,6 +1,7 @@
-import {KanbanBoard, KanbanColumn, KanbanCard} from './types';
+import {KanbanBoard, KanbanColumn, KanbanCard, Swimlane} from './types';
 
 const LABEL_COLORS_RE = /^<!--\s*kanban-labels:\s*(\{.*\})\s*-->$/;
+const SWIMLANES_RE = /^<!--\s*kanban-swimlanes:\s*(\[.*\])\s*-->$/;
 
 export function parseKanban(content: string): KanbanBoard {
 	const lines = content.split('\n');
@@ -8,6 +9,7 @@ export function parseKanban(content: string): KanbanBoard {
 	let currentColumn: KanbanColumn | null = null;
 	let currentCard: KanbanCard | null = null;
 	let labelColors: Record<string, string> = {};
+	let swimlanes: Swimlane[] = [];
 
 	for (const line of lines) {
 		const labelMatch = line.match(LABEL_COLORS_RE);
@@ -16,6 +18,19 @@ export function parseKanban(content: string): KanbanBoard {
 				const raw = JSON.parse(labelMatch[1]);
 				for (const key of Object.keys(raw)) {
 					labelColors[key.toLowerCase()] = raw[key];
+				}
+			} catch { /* ignore malformed */ }
+			continue;
+		}
+
+		const swimlaneMatch = line.match(SWIMLANES_RE);
+		if (swimlaneMatch?.[1]) {
+			try {
+				const raw = JSON.parse(swimlaneMatch[1]);
+				if (Array.isArray(raw)) {
+					swimlanes = raw.map((s: {labels?: string[]}) => ({
+						labels: Array.isArray(s.labels) ? s.labels : [],
+					}));
 				}
 			} catch { /* ignore malformed */ }
 			continue;
@@ -57,5 +72,9 @@ export function parseKanban(content: string): KanbanBoard {
 		}
 	}
 
-	return {columns, labelColors};
+	if (swimlanes.length === 0) {
+		swimlanes = [{labels: []}];
+	}
+
+	return {columns, labelColors, swimlanes};
 }

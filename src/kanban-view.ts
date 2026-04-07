@@ -1,5 +1,5 @@
 import {ItemView, WorkspaceLeaf, TFile, MarkdownRenderer, Component, ViewStateResult, Scope, setIcon} from 'obsidian';
-import {KanbanBoard, KanbanColumn, KanbanCard} from './types';
+import {KanbanBoard, KanbanColumn, KanbanCard, Swimlane, NO_LABEL_TOKEN} from './types';
 import {parseKanban} from './parser';
 import {serializeKanban} from './serializer';
 import type KanbanPlugin from './main';
@@ -10,10 +10,11 @@ interface DragState {
 	type: 'card' | 'column';
 	sourceColIndex: number;
 	sourceCardIndex: number;
+	swimlaneIndex: number;
 }
 
 export class KanbanView extends ItemView {
-	private board: KanbanBoard = {columns: [], labelColors: {}};
+	private board: KanbanBoard = {columns: [], labelColors: {}, swimlanes: []};
 	private filePath = '';
 	private isWriting = false;
 	private dragState: DragState | null = null;
@@ -155,15 +156,12 @@ export class KanbanView extends ItemView {
 	}
 
 	private async render(): Promise<void> {
-		// Save scroll positions
-		const existingBoard = this.contentEl.querySelector('.kanban-board') as HTMLElement | null;
-		const savedScrollLeft = existingBoard?.scrollLeft ?? 0;
-		const savedColumnScrollTops: number[] = [];
-		if (existingBoard) {
-			existingBoard.querySelectorAll('.kanban-column-body').forEach((body) => {
-				savedColumnScrollTops.push((body as HTMLElement).scrollTop);
-			});
-		}
+		// Save scroll positions for each board
+		const existingBoards = Array.from(this.contentEl.querySelectorAll('.kanban-board'));
+		const savedScrolls = existingBoards.map(b => ({
+			left: (b as HTMLElement).scrollLeft,
+			tops: Array.from(b.querySelectorAll('.kanban-column-body')).map(c => (c as HTMLElement).scrollTop),
+		}));
 
 		// Clean up previous render components
 		if (this.renderChild) {
@@ -175,14 +173,62 @@ export class KanbanView extends ItemView {
 		const container = this.contentEl;
 		container.empty();
 
-		const boardEl = container.createDiv({cls: 'kanban-board'});
+		// Ensure at least one swimlane
+		if (this.board.swimlanes.length === 0) {
+			this.board.swimlanes = [{labels: []}];
+		}
 
+		const settings = this.plugin.settings;
+
+		if (settings.hideSwimlanes) {
+			const boardEl = container.createDiv({cls: 'kanban-board'});
+			this.applyBoardClasses(boardEl);
+			await this.renderBoardContent(boardEl, null, 0);
+			if (savedScrolls[0]) {
+				boardEl.scrollLeft = savedScrolls[0].left;
+				boardEl.querySelectorAll('.kanban-column-body').forEach((body, i) => {
+					if (savedScrolls[0]!.tops[i] !== undefined) {
+						(body as HTMLElement).scrollTop = savedScrolls[0]!.tops[i]!;
+					}
+				});
+			}
+		} else {
+			const swimlanesContainer = container.createDiv({cls: 'kanban-swimlanes-container'});
+			for (let i = 0; i < this.board.swimlanes.length; i++) {
+				const swimlane = this.board.swimlanes[i]!;
+				const swimlaneEl = swimlanesContainer.createDiv({cls: 'kanban-swimlane'});
+				this.renderSwimlaneHeader(swimlaneEl, swimlane, i);
+
+				const boardEl = swimlaneEl.createDiv({cls: 'kanban-board'});
+				this.applyBoardClasses(boardEl);
+				await this.renderBoardContent(boardEl, swimlane.labels, i);
+				if (savedScrolls[i]) {
+					const saved = savedScrolls[i]!;
+					boardEl.scrollLeft = saved.left;
+					boardEl.querySelectorAll('.kanban-column-body').forEach((body, j) => {
+						if (saved.tops[j] !== undefined) {
+							(body as HTMLElement).scrollTop = saved.tops[j]!;
+						}
+					});
+				}
+
+				const addBtn = swimlanesContainer.createDiv({cls: 'kanban-add-swimlane-btn'});
+				addBtn.setText('+ Add swimlane');
+				const insertIdx = i + 1;
+				addBtn.addEventListener('click', () => this.addSwimlane(insertIdx));
+			}
+		}
+	}
+
+	private applyBoardClasses(boardEl: HTMLElement): void {
 		const settings = this.plugin.settings;
 		if (settings.hideCardCounter) boardEl.addClass('kanban-hide-counter');
 		if (settings.hideAddLabelButtons) boardEl.addClass('kanban-hide-add-label');
 		if (settings.hideAddDescription) boardEl.addClass('kanban-hide-add-description');
 		if (settings.hoverOnlyButtons) boardEl.addClass('kanban-hover-buttons');
+	}
 
+	private async renderBoardContent(boardEl: HTMLElement, labelFilter: string[] | null, swimlaneIndex: number): Promise<void> {
 		if (this.board.columns.length === 0) {
 			const addColBtn = boardEl.createDiv({cls: 'kanban-add-column-btn'});
 			addColBtn.setText('+ Add column');
@@ -193,31 +239,199 @@ export class KanbanView extends ItemView {
 		const renderPromises: Promise<void>[] = [];
 		this.board.columns.forEach((column, colIndex) => {
 			if (!column.archived) {
-				renderPromises.push(this.renderColumn(boardEl, column, colIndex));
+				renderPromises.push(this.renderColumn(boardEl, column, colIndex, labelFilter, swimlaneIndex));
 			}
 		});
 
 		await Promise.all(renderPromises);
+		this.setupBoardDropZone(boardEl, swimlaneIndex);
 
-		this.setupBoardDropZone(boardEl);
-
-		// Add column button
 		const addColBtn = boardEl.createDiv({cls: 'kanban-add-column-btn'});
 		addColBtn.setText('+ Add column');
 		addColBtn.addEventListener('click', () => this.addColumn());
-
-		// Restore scroll positions
-		boardEl.scrollLeft = savedScrollLeft;
-		boardEl.querySelectorAll('.kanban-column-body').forEach((body, i) => {
-			if (savedColumnScrollTops[i] !== undefined) {
-				(body as HTMLElement).scrollTop = savedColumnScrollTops[i];
-			}
-		});
 	}
 
-	private async renderColumn(boardEl: HTMLElement, column: KanbanColumn, colIndex: number): Promise<void> {
+	private cardMatchesFilter(card: KanbanCard, labelFilter: string[] | null): boolean {
+		if (!labelFilter || labelFilter.length === 0) return true;
+		const cardTags = this.extractTags(card.title).map(t => t.toLowerCase());
+		for (const filterLabel of labelFilter) {
+			if (filterLabel === NO_LABEL_TOKEN) {
+				if (cardTags.length === 0) return true;
+			} else if (cardTags.includes(filterLabel.toLowerCase())) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private renderSwimlaneHeader(swimlaneEl: HTMLElement, swimlane: Swimlane, index: number): void {
+		const headerEl = swimlaneEl.createDiv({cls: 'kanban-swimlane-header'});
+
+		const labelsEl = headerEl.createDiv({cls: 'kanban-swimlane-labels'});
+		if (swimlane.labels.length === 0) {
+			labelsEl.createSpan({cls: 'kanban-swimlane-all-labels', text: 'All labels'});
+		} else {
+			for (const label of swimlane.labels) {
+				const displayName = label === NO_LABEL_TOKEN ? 'no label' : label;
+				const color = label === NO_LABEL_TOKEN ? '#64748b' : this.getLabelColor(label);
+				const pill = labelsEl.createDiv({cls: 'kanban-swimlane-label'});
+				pill.style.backgroundColor = color;
+				pill.style.color = this.getContrastColor(color);
+				pill.createSpan({text: displayName});
+				const removeBtn = pill.createEl('button', {cls: 'kanban-swimlane-label-remove', attr: {'aria-label': 'Remove filter label'}});
+				removeBtn.setText('\u00D7');
+				removeBtn.addEventListener('click', (e) => {
+					e.stopPropagation();
+					this.removeSwimlaneLabel(index, label);
+				});
+			}
+		}
+
+		const addLabelBtn = headerEl.createEl('button', {cls: 'kanban-swimlane-add-label'});
+		addLabelBtn.setText('+ Label');
+		addLabelBtn.addEventListener('click', (e) => {
+			e.stopPropagation();
+			this.showSwimlaneAddLabel(headerEl, index);
+		});
+
+		if (this.board.swimlanes.length > 1) {
+			const deleteBtn = headerEl.createEl('button', {cls: 'kanban-swimlane-delete', attr: {'aria-label': 'Delete swimlane'}});
+			deleteBtn.setText('\u00D7');
+			deleteBtn.addEventListener('click', (e) => {
+				e.stopPropagation();
+				this.deleteSwimlane(index);
+			});
+		}
+	}
+
+	private showSwimlaneAddLabel(headerEl: HTMLElement, swimlaneIndex: number): void {
+		if (headerEl.querySelector('.kanban-swimlane-label-dropdown')) return;
+
+		const swimlane = this.board.swimlanes[swimlaneIndex];
+		if (!swimlane) return;
+
+		const allLabels = new Set<string>();
+		for (const col of this.board.columns) {
+			for (const card of col.cards) {
+				for (const tag of this.extractTags(card.title)) {
+					allLabels.add(tag.toLowerCase());
+				}
+			}
+		}
+
+		const dropdown = headerEl.createDiv({cls: 'kanban-swimlane-label-dropdown'});
+
+		const input = dropdown.createEl('input', {
+			cls: 'kanban-swimlane-label-input',
+			attr: {placeholder: 'Type label name...', type: 'text'},
+		});
+
+		const optionsEl = dropdown.createDiv({cls: 'kanban-swimlane-label-options'});
+
+		const renderOptions = (filter: string) => {
+			optionsEl.empty();
+
+			if (!swimlane.labels.includes(NO_LABEL_TOKEN)) {
+				if (!filter || 'no label'.includes(filter)) {
+					const opt = optionsEl.createDiv({cls: 'kanban-swimlane-label-option'});
+					const pill = opt.createSpan({cls: 'kanban-label'});
+					pill.style.backgroundColor = '#64748b';
+					pill.style.color = '#ffffff';
+					pill.setText('no label');
+					opt.addEventListener('click', () => {
+						this.addSwimlaneLabel(swimlaneIndex, NO_LABEL_TOKEN);
+					});
+				}
+			}
+
+			for (const label of allLabels) {
+				if (swimlane.labels.includes(label)) continue;
+				if (filter && !label.includes(filter)) continue;
+				const opt = optionsEl.createDiv({cls: 'kanban-swimlane-label-option'});
+				const color = this.getLabelColor(label);
+				const pill = opt.createSpan({cls: 'kanban-label'});
+				pill.style.backgroundColor = color;
+				pill.style.color = this.getContrastColor(color);
+				pill.setText(label);
+				opt.addEventListener('click', () => {
+					this.addSwimlaneLabel(swimlaneIndex, label);
+				});
+			}
+		};
+
+		renderOptions('');
+		input.focus();
+
+		input.addEventListener('input', () => {
+			renderOptions(input.value.trim().toLowerCase());
+		});
+
+		input.addEventListener('keydown', (e) => {
+			if (e.key === 'Enter') {
+				e.preventDefault();
+				const val = input.value.trim().toLowerCase().replace(/^#/, '');
+				if (val) {
+					if (val === 'no-label' || val === 'no label') {
+						this.addSwimlaneLabel(swimlaneIndex, NO_LABEL_TOKEN);
+					} else {
+						this.addSwimlaneLabel(swimlaneIndex, val);
+					}
+				} else {
+					dropdown.remove();
+				}
+			} else if (e.key === 'Escape') {
+				dropdown.remove();
+			}
+		});
+
+		const onClickOutside = (e: MouseEvent) => {
+			if (!dropdown.contains(e.target as Node)) {
+				dropdown.remove();
+				document.removeEventListener('mousedown', onClickOutside);
+			}
+		};
+		setTimeout(() => document.addEventListener('mousedown', onClickOutside), 0);
+	}
+
+	private async addSwimlane(afterIndex: number): Promise<void> {
+		this.pushUndo();
+		this.board.swimlanes.splice(afterIndex, 0, {labels: []});
+		await this.saveBoard();
+		await this.render();
+	}
+
+	private async deleteSwimlane(index: number): Promise<void> {
+		if (this.board.swimlanes.length <= 1) return;
+		this.pushUndo();
+		this.board.swimlanes.splice(index, 1);
+		await this.saveBoard();
+		await this.render();
+	}
+
+	private async addSwimlaneLabel(swimlaneIndex: number, label: string): Promise<void> {
+		const swimlane = this.board.swimlanes[swimlaneIndex];
+		if (!swimlane || swimlane.labels.includes(label)) return;
+		this.pushUndo();
+		swimlane.labels.push(label);
+		await this.saveBoard();
+		await this.render();
+	}
+
+	private async removeSwimlaneLabel(swimlaneIndex: number, label: string): Promise<void> {
+		const swimlane = this.board.swimlanes[swimlaneIndex];
+		if (!swimlane) return;
+		const idx = swimlane.labels.indexOf(label);
+		if (idx < 0) return;
+		this.pushUndo();
+		swimlane.labels.splice(idx, 1);
+		await this.saveBoard();
+		await this.render();
+	}
+
+	private async renderColumn(boardEl: HTMLElement, column: KanbanColumn, colIndex: number, labelFilter: string[] | null, swimlaneIndex: number): Promise<void> {
 		const columnEl = boardEl.createDiv({cls: 'kanban-column'});
 		columnEl.dataset.colIndex = String(colIndex);
+		columnEl.dataset.swimlaneIndex = String(swimlaneIndex);
 
 		// Column header
 		const headerEl = columnEl.createDiv({cls: 'kanban-column-header'});
@@ -227,7 +441,8 @@ export class KanbanView extends ItemView {
 
 		const headerLeft = headerEl.createDiv({cls: 'kanban-column-header-left'});
 		const titleSpan = headerLeft.createEl('span', {text: column.title, cls: 'kanban-column-title'});
-		headerLeft.createEl('span', {text: String(column.cards.length), cls: 'kanban-column-count'});
+		const filteredCount = column.cards.filter(c => this.cardMatchesFilter(c, labelFilter)).length;
+		headerLeft.createEl('span', {text: String(filteredCount), cls: 'kanban-column-count'});
 
 		titleSpan.addEventListener('click', (e) => {
 			e.stopPropagation();
@@ -250,14 +465,17 @@ export class KanbanView extends ItemView {
 			this.deleteColumn(colIndex);
 		});
 
-		this.setupColumnDrag(dragHandle, columnEl, colIndex);
+		this.setupColumnDrag(dragHandle, columnEl, colIndex, swimlaneIndex);
 
 		// Card container
 		const bodyEl = columnEl.createDiv({cls: 'kanban-column-body'});
+		bodyEl.dataset.swimlaneIndex = String(swimlaneIndex);
 
 		const cardPromises: Promise<void>[] = [];
 		column.cards.forEach((card, cardIndex) => {
-			cardPromises.push(this.renderCard(bodyEl, card, colIndex, cardIndex));
+			if (this.cardMatchesFilter(card, labelFilter)) {
+				cardPromises.push(this.renderCard(bodyEl, card, colIndex, cardIndex, swimlaneIndex, labelFilter));
+			}
 		});
 
 		await Promise.all(cardPromises);
@@ -265,9 +483,9 @@ export class KanbanView extends ItemView {
 		// Add card button
 		const addCardBtn = bodyEl.createDiv({cls: 'kanban-add-card-btn'});
 		addCardBtn.setText('+ Add card');
-		addCardBtn.addEventListener('click', () => this.addCard(colIndex));
+		addCardBtn.addEventListener('click', () => this.addCard(colIndex, labelFilter));
 
-		this.setupCardDropZone(bodyEl, colIndex);
+		this.setupCardDropZone(bodyEl, colIndex, swimlaneIndex);
 	}
 
 	private async renderCard(
@@ -275,6 +493,8 @@ export class KanbanView extends ItemView {
 		card: KanbanCard,
 		colIndex: number,
 		cardIndex: number,
+		swimlaneIndex: number,
+		labelFilter: string[] | null,
 	): Promise<void> {
 		const cardEl = bodyEl.createDiv({cls: 'kanban-card'});
 		cardEl.dataset.cardIndex = String(cardIndex);
@@ -311,7 +531,7 @@ export class KanbanView extends ItemView {
 		addLabelBtn.setText('+ Add label');
 		addLabelBtn.addEventListener('click', (e) => {
 			e.stopPropagation();
-			this.addLabelToCard(colIndex, cardIndex, card);
+			this.addLabelToCard(colIndex, cardIndex, card, cardEl);
 		});
 
 		if (card.rawBodyLines.length > 0 && this.renderChild) {
@@ -346,12 +566,12 @@ export class KanbanView extends ItemView {
 			});
 		}
 
-		this.setupCardDrag(dragHandle, cardEl, colIndex, cardIndex);
+		this.setupCardDrag(dragHandle, cardEl, colIndex, cardIndex, swimlaneIndex);
 	}
 
 	// --- Drag & Drop: Cards ---
 
-	private setupCardDrag(dragHandle: HTMLElement, cardEl: HTMLElement, colIndex: number, cardIndex: number): void {
+	private setupCardDrag(dragHandle: HTMLElement, cardEl: HTMLElement, colIndex: number, cardIndex: number, swimlaneIndex: number): void {
 		dragHandle.addEventListener('mousedown', () => {
 			cardEl.draggable = true;
 		});
@@ -365,7 +585,7 @@ export class KanbanView extends ItemView {
 				return;
 			}
 			e.stopPropagation();
-			this.dragState = {type: 'card', sourceColIndex: colIndex, sourceCardIndex: cardIndex};
+			this.dragState = {type: 'card', sourceColIndex: colIndex, sourceCardIndex: cardIndex, swimlaneIndex};
 			if (e.dataTransfer) {
 				e.dataTransfer.effectAllowed = 'move';
 				e.dataTransfer.setData('text/plain', '');
@@ -382,9 +602,10 @@ export class KanbanView extends ItemView {
 		});
 	}
 
-	private setupCardDropZone(bodyEl: HTMLElement, targetColIndex: number): void {
+	private setupCardDropZone(bodyEl: HTMLElement, targetColIndex: number, swimlaneIndex: number): void {
 		bodyEl.addEventListener('dragover', (e) => {
 			if (!this.dragState || this.dragState.type !== 'card') return;
+			if (this.dragState.swimlaneIndex !== swimlaneIndex) return;
 			e.preventDefault();
 			e.stopPropagation();
 			if (e.dataTransfer) {
@@ -434,15 +655,21 @@ export class KanbanView extends ItemView {
 			e.preventDefault();
 			e.stopPropagation();
 			if (!this.dragState || this.dragState.type !== 'card') return;
+			if (this.dragState.swimlaneIndex !== swimlaneIndex) return;
 
-			const cards = Array.from(bodyEl.querySelectorAll('.kanban-card:not(.dragging)'));
-			let targetIndex = cards.length;
+			const cards = Array.from(bodyEl.querySelectorAll('.kanban-card:not(.dragging)')) as HTMLElement[];
+			let targetIndex: number;
 
-			for (let i = 0; i < cards.length; i++) {
-				const rect = cards[i]?.getBoundingClientRect();
-				if (rect && e.clientY < rect.top + rect.height / 2) {
-					targetIndex = i;
-					break;
+			if (cards.length === 0) {
+				targetIndex = this.board.columns[targetColIndex]?.cards.length ?? 0;
+			} else {
+				targetIndex = parseInt(cards[cards.length - 1]?.dataset.cardIndex ?? '0') + 1;
+				for (let i = 0; i < cards.length; i++) {
+					const rect = cards[i]?.getBoundingClientRect();
+					if (rect && e.clientY < rect.top + rect.height / 2) {
+						targetIndex = parseInt(cards[i]?.dataset.cardIndex ?? '0');
+						break;
+					}
 				}
 			}
 
@@ -459,7 +686,7 @@ export class KanbanView extends ItemView {
 
 	// --- Drag & Drop: Columns ---
 
-	private setupColumnDrag(dragHandle: HTMLElement, columnEl: HTMLElement, colIndex: number): void {
+	private setupColumnDrag(dragHandle: HTMLElement, columnEl: HTMLElement, colIndex: number, swimlaneIndex: number): void {
 		dragHandle.addEventListener('mousedown', () => {
 			columnEl.draggable = true;
 		});
@@ -472,7 +699,7 @@ export class KanbanView extends ItemView {
 				e.preventDefault();
 				return;
 			}
-			this.dragState = {type: 'column', sourceColIndex: colIndex, sourceCardIndex: -1};
+			this.dragState = {type: 'column', sourceColIndex: colIndex, sourceCardIndex: -1, swimlaneIndex};
 			if (e.dataTransfer) {
 				e.dataTransfer.effectAllowed = 'move';
 				e.dataTransfer.setData('text/plain', '');
@@ -489,7 +716,7 @@ export class KanbanView extends ItemView {
 		});
 	}
 
-	private setupBoardDropZone(boardEl: HTMLElement): void {
+	private setupBoardDropZone(boardEl: HTMLElement, _swimlaneIndex: number): void {
 		boardEl.addEventListener('dragover', (e) => {
 			if (!this.dragState || this.dragState.type !== 'column') return;
 			e.preventDefault();
@@ -625,11 +852,18 @@ export class KanbanView extends ItemView {
 
 	// --- Add / Delete operations ---
 
-	private async addCard(colIndex: number): Promise<void> {
+	private async addCard(colIndex: number, labelFilter?: string[] | null): Promise<void> {
 		const column = this.board.columns[colIndex];
 		if (!column) return;
 		this.pushUndo();
-		column.cards.push({title: 'New card', rawBodyLines: []});
+		let title = 'New card';
+		if (labelFilter && labelFilter.length > 0) {
+			const tags = labelFilter.filter(l => l !== NO_LABEL_TOKEN).map(l => `#${l}`);
+			if (tags.length > 0) {
+				title = `New card ${tags.join(' ')}`;
+			}
+		}
+		column.cards.push({title, rawBodyLines: []});
 		await this.saveBoard();
 		await this.render();
 	}
@@ -898,12 +1132,7 @@ export class KanbanView extends ItemView {
 		return luminance > 0.55 ? '#000000' : '#ffffff';
 	}
 
-	private async addLabelToCard(colIndex: number, cardIndex: number, card: KanbanCard): Promise<void> {
-		// Find the labels container for this card
-		const cardEl = this.contentEl.querySelectorAll('.kanban-card')[
-			this.getGlobalCardIndex(colIndex, cardIndex)
-		] as HTMLElement | undefined;
-		if (!cardEl) return;
+	private async addLabelToCard(colIndex: number, cardIndex: number, card: KanbanCard, cardEl: HTMLElement): Promise<void> {
 		const labelsEl = cardEl.querySelector('.kanban-card-labels') as HTMLElement | null;
 		if (!labelsEl) return;
 		const addBtn = labelsEl.querySelector('.kanban-label-add') as HTMLElement | null;
@@ -944,14 +1173,6 @@ export class KanbanView extends ItemView {
 			else if (e.key === 'Escape') { finish(false); }
 		});
 		input.addEventListener('click', (e) => e.stopPropagation());
-	}
-
-	private getGlobalCardIndex(colIndex: number, cardIndex: number): number {
-		let idx = 0;
-		for (let c = 0; c < colIndex; c++) {
-			idx += this.board.columns[c]?.cards.length ?? 0;
-		}
-		return idx + cardIndex;
 	}
 
 	private async removeLabelFromCard(colIndex: number, cardIndex: number, card: KanbanCard, tag: string): Promise<void> {
