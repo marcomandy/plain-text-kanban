@@ -13,7 +13,10 @@ export function parseKanban(content: string): KanbanBoard {
 		const labelMatch = line.match(LABEL_COLORS_RE);
 		if (labelMatch?.[1]) {
 			try {
-				labelColors = JSON.parse(labelMatch[1]);
+				const raw = JSON.parse(labelMatch[1]);
+				for (const key of Object.keys(raw)) {
+					labelColors[key.toLowerCase()] = raw[key];
+				}
 			} catch { /* ignore malformed */ }
 			continue;
 		}

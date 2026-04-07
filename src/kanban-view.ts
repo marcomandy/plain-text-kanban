@@ -2,6 +2,7 @@ import {ItemView, WorkspaceLeaf, TFile, MarkdownRenderer, Component, ViewStateRe
 import {KanbanBoard, KanbanColumn, KanbanCard} from './types';
 import {parseKanban} from './parser';
 import {serializeKanban} from './serializer';
+import type KanbanPlugin from './main';
 
 export const KANBAN_VIEW_TYPE = 'plain-text-kanban';
 
@@ -22,7 +23,7 @@ export class KanbanView extends ItemView {
 	private dragPlaceholder: HTMLElement | null = null;
 	private static readonly MAX_HISTORY = 50;
 
-	constructor(leaf: WorkspaceLeaf) {
+	constructor(leaf: WorkspaceLeaf, private plugin: KanbanPlugin) {
 		super(leaf);
 	}
 
@@ -99,6 +100,10 @@ export class KanbanView extends ItemView {
 		return {file: this.filePath};
 	}
 
+	refreshSettings(): void {
+		this.render();
+	}
+
 	private async loadAndRender(): Promise<void> {
 		const file = this.app.vault.getAbstractFileByPath(this.filePath);
 		if (!(file instanceof TFile)) return;
@@ -171,6 +176,12 @@ export class KanbanView extends ItemView {
 		container.empty();
 
 		const boardEl = container.createDiv({cls: 'kanban-board'});
+
+		const settings = this.plugin.settings;
+		if (settings.hideCardCounter) boardEl.addClass('kanban-hide-counter');
+		if (settings.hideAddLabelButtons) boardEl.addClass('kanban-hide-add-label');
+		if (settings.hideAddDescription) boardEl.addClass('kanban-hide-add-description');
+		if (settings.hoverOnlyButtons) boardEl.addClass('kanban-hover-buttons');
 
 		if (this.board.columns.length === 0) {
 			const addColBtn = boardEl.createDiv({cls: 'kanban-add-column-btn'});
@@ -308,6 +319,7 @@ export class KanbanView extends ItemView {
 			const displayBody = this.getDisplayBody(card.rawBodyLines);
 			if (displayBody) {
 				await MarkdownRenderer.render(this.app, displayBody, bodyContentEl, this.filePath, this.renderChild);
+				this.linkifyOsPaths(bodyContentEl);
 
 				// Setup checkbox toggle handlers
 				const checkboxes = bodyContentEl.querySelectorAll('input[type="checkbox"]');
@@ -822,7 +834,17 @@ export class KanbanView extends ItemView {
 	private extractTags(title: string): string[] {
 		const matches = title.match(/#([\w][\w-]*)/g);
 		if (!matches) return [];
-		return matches.map(m => m.substring(1));
+		const seen = new Set<string>();
+		const result: string[] = [];
+		for (const m of matches) {
+			const tag = m.substring(1);
+			const lower = tag.toLowerCase();
+			if (!seen.has(lower)) {
+				seen.add(lower);
+				result.push(tag);
+			}
+		}
+		return result;
 	}
 
 	private getTitleWithoutTags(title: string): string {
@@ -830,11 +852,12 @@ export class KanbanView extends ItemView {
 	}
 
 	private getLabelColor(tag: string): string {
-		if (this.board.labelColors[tag]) return this.board.labelColors[tag];
+		const key = tag.toLowerCase();
+		if (this.board.labelColors[key]) return this.board.labelColors[key];
 		// Assign a deterministic default color based on tag hash
 		let hash = 0;
-		for (let i = 0; i < tag.length; i++) {
-			hash = ((hash << 5) - hash + tag.charCodeAt(i)) | 0;
+		for (let i = 0; i < key.length; i++) {
+			hash = ((hash << 5) - hash + key.charCodeAt(i)) | 0;
 		}
 		const idx = Math.abs(hash) % KanbanView.DEFAULT_LABEL_COLORS.length;
 		return KanbanView.DEFAULT_LABEL_COLORS[idx] ?? '#64748b';
@@ -902,11 +925,12 @@ export class KanbanView extends ItemView {
 			const newTag = input.value.trim().replace(/\s+/g, '-').replace(/^#/, '');
 			if (commit && newTag) {
 				const existing = this.extractTags(card.title);
-				if (!existing.includes(newTag)) {
+				if (!existing.some(t => t.toLowerCase() === newTag.toLowerCase())) {
 					this.pushUndo();
 					card.title = card.title.trimEnd() + ` #${newTag}`;
-					if (!this.board.labelColors[newTag]) {
-						this.board.labelColors[newTag] = this.getLabelColor(newTag);
+					const colorKey = newTag.toLowerCase();
+					if (!this.board.labelColors[colorKey]) {
+						this.board.labelColors[colorKey] = this.getLabelColor(newTag);
 					}
 					await this.saveBoard();
 				}
@@ -932,7 +956,7 @@ export class KanbanView extends ItemView {
 
 	private async removeLabelFromCard(colIndex: number, cardIndex: number, card: KanbanCard, tag: string): Promise<void> {
 		this.pushUndo();
-		card.title = card.title.replace(new RegExp(`\\s*#${this.escapeRegex(tag)}`, 'g'), '');
+		card.title = card.title.replace(new RegExp(`\\s*#${this.escapeRegex(tag)}\\b`, 'gi'), '');
 		await this.saveBoard();
 		await this.render();
 	}
@@ -976,19 +1000,20 @@ export class KanbanView extends ItemView {
 			const newTag = nameInput.value.trim().replace(/\s+/g, '-').replace(/^#/, '');
 			const newColor = colorInput.value;
 			const colorWasChanged = newColor !== color;
-			if (newTag && (newTag !== oldTag || colorWasChanged)) {
+			const oldKey = oldTag.toLowerCase();
+			const newKey = newTag.toLowerCase();
+			if (newTag && (oldKey !== newKey || colorWasChanged)) {
 				this.pushUndo();
-				delete this.board.labelColors[oldTag];
-				if (colorWasChanged || !this.board.labelColors[newTag]) {
-					// Use the picked color if explicitly changed, otherwise keep existing
-					this.board.labelColors[newTag] = newColor;
+				delete this.board.labelColors[oldKey];
+				if (colorWasChanged || !this.board.labelColors[newKey]) {
+					this.board.labelColors[newKey] = newColor;
 				}
 				// Rename tag in all card titles
-				if (newTag !== oldTag) {
+				if (oldKey !== newKey) {
 					for (const col of this.board.columns) {
 						for (const card of col.cards) {
 							card.title = card.title.replace(
-								new RegExp(`#${this.escapeRegex(oldTag)}\\b`, 'g'),
+								new RegExp(`#${this.escapeRegex(oldTag)}\\b`, 'gi'),
 								`#${newTag}`,
 							);
 						}
@@ -1028,6 +1053,61 @@ export class KanbanView extends ItemView {
 				el.classList.remove('drop-above', 'drop-below', 'drop-before', 'drop-after', 'drop-at-end');
 			});
 		this.removePlaceholder();
+	}
+
+	private linkifyOsPaths(container: HTMLElement): void {
+		const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+		const textNodes: Text[] = [];
+		let node: Text | null;
+		while ((node = walker.nextNode() as Text | null)) {
+			textNodes.push(node);
+		}
+
+		const pathRegex = /([A-Za-z]:[\\\/][^\s<>"*?|]+|\/(?:[\w.-]+\/)+[\w.-]+)/g;
+
+		for (const textNode of textNodes) {
+			if (textNode.parentElement?.closest('a, code, pre')) continue;
+
+			const text = textNode.textContent || '';
+			pathRegex.lastIndex = 0;
+			if (!pathRegex.test(text)) continue;
+			pathRegex.lastIndex = 0;
+
+			const fragment = document.createDocumentFragment();
+			let lastIndex = 0;
+			let match: RegExpExecArray | null;
+			let hasMatch = false;
+
+			while ((match = pathRegex.exec(text)) !== null) {
+				hasMatch = true;
+				if (match.index > lastIndex) {
+					fragment.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
+				}
+
+				const pathStr = match[0];
+				const link = document.createElement('a');
+				link.textContent = pathStr;
+				link.className = 'external-link';
+
+				let fileUri: string;
+				if (/^[A-Za-z]:/.test(pathStr)) {
+					fileUri = 'file:///' + pathStr.replace(/\\/g, '/');
+				} else {
+					fileUri = 'file://' + pathStr;
+				}
+				link.setAttribute('href', fileUri);
+				fragment.appendChild(link);
+
+				lastIndex = match.index + match[0].length;
+			}
+
+			if (hasMatch) {
+				if (lastIndex < text.length) {
+					fragment.appendChild(document.createTextNode(text.slice(lastIndex)));
+				}
+				textNode.parentNode?.replaceChild(fragment, textNode);
+			}
+		}
 	}
 
 	private getDisplayBody(rawLines: string[]): string {

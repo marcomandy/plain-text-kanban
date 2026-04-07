@@ -1,9 +1,16 @@
 import {MarkdownView, Plugin, TFile, Menu} from 'obsidian';
 import {KanbanView, KANBAN_VIEW_TYPE} from './kanban-view';
+import {KanbanPluginSettings, DEFAULT_SETTINGS, KanbanSettingTab} from './settings';
 
 export default class KanbanPlugin extends Plugin {
+	settings: KanbanPluginSettings = DEFAULT_SETTINGS;
+
 	async onload() {
-		this.registerView(KANBAN_VIEW_TYPE, (leaf) => new KanbanView(leaf));
+		await this.loadSettings();
+
+		this.registerView(KANBAN_VIEW_TYPE, (leaf) => new KanbanView(leaf, this));
+
+		this.addSettingTab(new KanbanSettingTab(this.app, this));
 
 		this.addCommand({
 			id: 'open-as-kanban',
@@ -38,6 +45,19 @@ export default class KanbanPlugin extends Plugin {
 		this.app.workspace.getLeaf(false).setViewState({
 			type: KANBAN_VIEW_TYPE,
 			state: {file: filePath},
+		});
+	}
+
+	async loadSettings(): Promise<void> {
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+	}
+
+	async saveSettings(): Promise<void> {
+		await this.saveData(this.settings);
+		this.app.workspace.getLeavesOfType(KANBAN_VIEW_TYPE).forEach(leaf => {
+			if (leaf.view instanceof KanbanView) {
+				leaf.view.refreshSettings();
+			}
 		});
 	}
 }
