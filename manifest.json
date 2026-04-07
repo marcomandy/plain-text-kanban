@@ -3,7 +3,7 @@
 	"name": "Plain Text Kanban",
 	"version": "1.0.0",
 	"minAppVersion": "1.0.0",
-	"description": "Renders nested markdown lists as kanban boards with drag and drop.",
-	"author": "",
+	"description": "Renders nested markdown lists as kanban boards with drag and drop, image support, checklist, archive functionality, labels and swimlanes.",
+	"author": "Marco Mandia",
 	"isDesktopOnly": false
 }
