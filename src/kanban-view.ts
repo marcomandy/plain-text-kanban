@@ -1063,7 +1063,9 @@ export class KanbanView extends ItemView {
 			textNodes.push(node);
 		}
 
-		const pathRegex = /([A-Za-z]:[\\\/][^\s<>"*?|]+|\/(?:[\w.-]+\/)+[\w.-]+)/g;
+		// Match quoted paths (with spaces allowed) or unquoted paths (no spaces)
+		// Group 1: quote char, Group 2: quoted path, Group 3: unquoted Windows path, Group 4: unquoted Unix path
+		const pathRegex = /(?:(["'])(([A-Za-z]:[\\\/][^"'<>*?|]*[^"'<>*?|\s])|\/(?:[\w. -]+\/)+[\w.-]+)\1)|([A-Za-z]:[\\\/][^\s<>"'*?|]+)|(?:\/(?:[\w.-]+\/)+[\w.-]+)/g;
 
 		for (const textNode of textNodes) {
 			if (textNode.parentElement?.closest('a, code, pre')) continue;
@@ -1080,25 +1082,39 @@ export class KanbanView extends ItemView {
 
 			while ((match = pathRegex.exec(text)) !== null) {
 				hasMatch = true;
+				const fullMatch = match[0];
+				const quote = match[1];
+				const quotedPath = match[2];
+				const unquotedWin = match[4];
+				// Determine the actual file path (strip surrounding quotes)
+				const pathStr = quotedPath || unquotedWin || fullMatch;
+
 				if (match.index > lastIndex) {
 					fragment.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
 				}
 
-				const pathStr = match[0];
+				// If quoted, show the quotes as text around the link
+				if (quote) {
+					fragment.appendChild(document.createTextNode(quote));
+				}
+
 				const link = document.createElement('a');
 				link.textContent = pathStr;
-				link.className = 'external-link';
-
-				let fileUri: string;
-				if (/^[A-Za-z]:/.test(pathStr)) {
-					fileUri = 'file:///' + pathStr.replace(/\\/g, '/');
-				} else {
-					fileUri = 'file://' + pathStr;
-				}
-				link.setAttribute('href', fileUri);
+				link.className = 'external-link os-path-link';
+				link.setAttribute('href', '#');
+				link.dataset.osPath = pathStr;
+				link.addEventListener('click', (e) => {
+					e.preventDefault();
+					e.stopPropagation();
+					this.openOsPath(pathStr);
+				});
 				fragment.appendChild(link);
 
-				lastIndex = match.index + match[0].length;
+				if (quote) {
+					fragment.appendChild(document.createTextNode(quote));
+				}
+
+				lastIndex = match.index + fullMatch.length;
 			}
 
 			if (hasMatch) {
@@ -1107,6 +1123,26 @@ export class KanbanView extends ItemView {
 				}
 				textNode.parentNode?.replaceChild(fragment, textNode);
 			}
+		}
+	}
+
+	private openOsPath(pathStr: string): void {
+		// Use Electron shell to open the path natively (works for files and folders)
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const electron = (window as any).require?.('electron');
+		if (electron?.remote?.shell) {
+			electron.remote.shell.openPath(pathStr);
+		} else if (electron?.shell) {
+			electron.shell.openPath(pathStr);
+		} else {
+			// Fallback: open as file:// URI
+			let fileUri: string;
+			if (/^[A-Za-z]:/.test(pathStr)) {
+				fileUri = 'file:///' + pathStr.replace(/\\/g, '/');
+			} else {
+				fileUri = 'file://' + pathStr;
+			}
+			window.open(fileUri);
 		}
 	}
 
@@ -1124,7 +1160,7 @@ export class KanbanView extends ItemView {
 		const prefix = prefixMatch[1];
 
 		return rawLines.map(line => {
-			if (line.trim() === '') return '';
+			if (line.trim() === '') return '&nbsp;';
 			if (line.startsWith(prefix)) return line.substring(prefix.length);
 			return line.trimStart();
 		}).join('\n').trim();
