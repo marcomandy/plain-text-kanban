@@ -6,6 +6,7 @@ export interface KanbanCard {
 export interface KanbanColumn {
 	title: string;
 	cards: KanbanCard[];
+	archived?: boolean;
 }
 
 export interface KanbanBoard {

@@ -9,7 +9,8 @@ export function serializeKanban(board: KanbanBoard): string {
 	}
 
 	for (const column of board.columns) {
-		lines.push(`- # ${column.title}`);
+		const colTitle = column.archived ? `${column.title} __archived__` : column.title;
+		lines.push(`- # ${colTitle}`);
 
 		for (const card of column.cards) {
 			lines.push(`\t- ## ${card.title}`);

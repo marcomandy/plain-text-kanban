@@ -21,7 +21,13 @@ export function parseKanban(content: string): KanbanBoard {
 		const columnMatch = line.match(/^- # (.+)/);
 		if (columnMatch?.[1]) {
 			currentCard = null;
-			currentColumn = {title: columnMatch[1], cards: []};
+			let title = columnMatch[1];
+			let archived = false;
+			if (title.endsWith(' __archived__')) {
+				title = title.slice(0, -' __archived__'.length);
+				archived = true;
+			}
+			currentColumn = {title, cards: [], archived};
 			columns.push(currentColumn);
 			continue;
 		}

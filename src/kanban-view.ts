@@ -1,4 +1,4 @@
-import {ItemView, WorkspaceLeaf, TFile, MarkdownRenderer, Component, ViewStateResult, Scope} from 'obsidian';
+import {ItemView, WorkspaceLeaf, TFile, MarkdownRenderer, Component, ViewStateResult, Scope, setIcon} from 'obsidian';
 import {KanbanBoard, KanbanColumn, KanbanCard} from './types';
 import {parseKanban} from './parser';
 import {serializeKanban} from './serializer';
@@ -19,6 +19,7 @@ export class KanbanView extends ItemView {
 	private renderChild: Component | null = null;
 	private undoStack: string[] = [];
 	private redoStack: string[] = [];
+	private dragPlaceholder: HTMLElement | null = null;
 	private static readonly MAX_HISTORY = 50;
 
 	constructor(leaf: WorkspaceLeaf) {
@@ -180,10 +181,14 @@ export class KanbanView extends ItemView {
 
 		const renderPromises: Promise<void>[] = [];
 		this.board.columns.forEach((column, colIndex) => {
-			renderPromises.push(this.renderColumn(boardEl, column, colIndex));
+			if (!column.archived) {
+				renderPromises.push(this.renderColumn(boardEl, column, colIndex));
+			}
 		});
 
 		await Promise.all(renderPromises);
+
+		this.setupBoardDropZone(boardEl);
 
 		// Add column button
 		const addColBtn = boardEl.createDiv({cls: 'kanban-add-column-btn'});
@@ -205,7 +210,10 @@ export class KanbanView extends ItemView {
 
 		// Column header
 		const headerEl = columnEl.createDiv({cls: 'kanban-column-header'});
-		headerEl.draggable = true;
+
+		const dragHandle = headerEl.createDiv({cls: 'kanban-drag-handle'});
+		setIcon(dragHandle, 'grip-vertical');
+
 		const headerLeft = headerEl.createDiv({cls: 'kanban-column-header-left'});
 		const titleSpan = headerLeft.createEl('span', {text: column.title, cls: 'kanban-column-title'});
 		headerLeft.createEl('span', {text: String(column.cards.length), cls: 'kanban-column-count'});
@@ -215,14 +223,23 @@ export class KanbanView extends ItemView {
 			this.startEditingColumnTitle(colIndex, headerEl, column);
 		});
 
-		const deleteBtn = headerEl.createEl('button', {cls: 'kanban-column-delete', attr: {'aria-label': 'Delete column'}});
+		const headerButtons = headerEl.createDiv({cls: 'kanban-column-header-buttons'});
+
+		const archiveBtn = headerButtons.createEl('button', {cls: 'kanban-column-archive', attr: {'aria-label': 'Archive column'}});
+		setIcon(archiveBtn, 'archive');
+		archiveBtn.addEventListener('click', (e) => {
+			e.stopPropagation();
+			this.archiveColumn(colIndex);
+		});
+
+		const deleteBtn = headerButtons.createEl('button', {cls: 'kanban-column-delete', attr: {'aria-label': 'Delete column'}});
 		deleteBtn.setText('\u00D7');
 		deleteBtn.addEventListener('click', (e) => {
 			e.stopPropagation();
 			this.deleteColumn(colIndex);
 		});
 
-		this.setupColumnDrag(headerEl, columnEl, colIndex);
+		this.setupColumnDrag(dragHandle, columnEl, colIndex);
 
 		// Card container
 		const bodyEl = columnEl.createDiv({cls: 'kanban-column-body'});
@@ -240,7 +257,6 @@ export class KanbanView extends ItemView {
 		addCardBtn.addEventListener('click', () => this.addCard(colIndex));
 
 		this.setupCardDropZone(bodyEl, colIndex);
-		this.setupColumnDropZone(columnEl, colIndex);
 	}
 
 	private async renderCard(
@@ -251,7 +267,10 @@ export class KanbanView extends ItemView {
 	): Promise<void> {
 		const cardEl = bodyEl.createDiv({cls: 'kanban-card'});
 		cardEl.dataset.cardIndex = String(cardIndex);
-		cardEl.draggable = true;
+
+		// Drag handle
+		const dragHandle = cardEl.createDiv({cls: 'kanban-drag-handle kanban-card-drag-handle'});
+		setIcon(dragHandle, 'grip-vertical');
 
 		// Extract tags and display title
 		const tags = this.extractTags(card.title);
@@ -315,15 +334,21 @@ export class KanbanView extends ItemView {
 			});
 		}
 
-		this.setupCardDrag(cardEl, colIndex, cardIndex);
+		this.setupCardDrag(dragHandle, cardEl, colIndex, cardIndex);
 	}
 
 	// --- Drag & Drop: Cards ---
 
-	private setupCardDrag(cardEl: HTMLElement, colIndex: number, cardIndex: number): void {
+	private setupCardDrag(dragHandle: HTMLElement, cardEl: HTMLElement, colIndex: number, cardIndex: number): void {
+		dragHandle.addEventListener('mousedown', () => {
+			cardEl.draggable = true;
+		});
+		dragHandle.addEventListener('mouseup', () => {
+			cardEl.draggable = false;
+		});
+
 		cardEl.addEventListener('dragstart', (e) => {
-			const target = e.target as HTMLElement;
-			if (target.closest('.kanban-card-labels') || target.closest('.kanban-label-edit-container')) {
+			if (!cardEl.draggable) {
 				e.preventDefault();
 				return;
 			}
@@ -337,8 +362,10 @@ export class KanbanView extends ItemView {
 		});
 
 		cardEl.addEventListener('dragend', () => {
+			cardEl.draggable = false;
 			cardEl.removeClass('dragging');
 			this.dragState = null;
+			this.removePlaceholder();
 			this.clearDropIndicators();
 		});
 	}
@@ -352,7 +379,7 @@ export class KanbanView extends ItemView {
 				e.dataTransfer.dropEffect = 'move';
 			}
 
-			this.clearDropIndicators();
+			this.removePlaceholder();
 
 			const cards = Array.from(bodyEl.querySelectorAll('.kanban-card:not(.dragging)'));
 			let insertIndex = cards.length;
@@ -365,16 +392,29 @@ export class KanbanView extends ItemView {
 				}
 			}
 
+			const placeholder = document.createElement('div');
+			placeholder.className = 'kanban-card-placeholder';
 			if (insertIndex < cards.length) {
-				cards[insertIndex]?.classList.add('drop-above');
+				cards[insertIndex]?.before(placeholder);
 			} else {
-				bodyEl.addClass('drop-at-end');
+				const addBtn = bodyEl.querySelector('.kanban-add-card-btn');
+				if (addBtn) addBtn.before(placeholder);
+				else bodyEl.appendChild(placeholder);
 			}
+			this.dragPlaceholder = placeholder;
+
+			// Highlight target column
+			this.contentEl.querySelectorAll('.kanban-column').forEach(col => col.classList.remove('drag-target-column'));
+			bodyEl.closest('.kanban-column')?.classList.add('drag-target-column');
 		});
 
 		bodyEl.addEventListener('dragleave', (e) => {
 			if (!bodyEl.contains(e.relatedTarget as Node)) {
-				this.clearDropIndicators();
+				if (this.dragPlaceholder && bodyEl.contains(this.dragPlaceholder)) {
+					this.dragPlaceholder.remove();
+					this.dragPlaceholder = null;
+				}
+				bodyEl.closest('.kanban-column')?.classList.remove('drag-target-column');
 			}
 		});
 
@@ -400,14 +440,26 @@ export class KanbanView extends ItemView {
 				targetColIndex,
 				targetIndex,
 			);
+			this.removePlaceholder();
 			this.clearDropIndicators();
 		});
 	}
 
 	// --- Drag & Drop: Columns ---
 
-	private setupColumnDrag(headerEl: HTMLElement, columnEl: HTMLElement, colIndex: number): void {
-		headerEl.addEventListener('dragstart', (e) => {
+	private setupColumnDrag(dragHandle: HTMLElement, columnEl: HTMLElement, colIndex: number): void {
+		dragHandle.addEventListener('mousedown', () => {
+			columnEl.draggable = true;
+		});
+		dragHandle.addEventListener('mouseup', () => {
+			columnEl.draggable = false;
+		});
+
+		columnEl.addEventListener('dragstart', (e) => {
+			if (!columnEl.draggable) {
+				e.preventDefault();
+				return;
+			}
 			this.dragState = {type: 'column', sourceColIndex: colIndex, sourceCardIndex: -1};
 			if (e.dataTransfer) {
 				e.dataTransfer.effectAllowed = 'move';
@@ -416,50 +468,82 @@ export class KanbanView extends ItemView {
 			setTimeout(() => columnEl.addClass('dragging'), 0);
 		});
 
-		headerEl.addEventListener('dragend', () => {
+		columnEl.addEventListener('dragend', () => {
+			columnEl.draggable = false;
 			columnEl.removeClass('dragging');
 			this.dragState = null;
+			this.removePlaceholder();
 			this.clearDropIndicators();
 		});
 	}
 
-	private setupColumnDropZone(columnEl: HTMLElement, colIndex: number): void {
-		columnEl.addEventListener('dragover', (e) => {
+	private setupBoardDropZone(boardEl: HTMLElement): void {
+		boardEl.addEventListener('dragover', (e) => {
 			if (!this.dragState || this.dragState.type !== 'column') return;
-			if (this.dragState.sourceColIndex === colIndex) return;
 			e.preventDefault();
 			if (e.dataTransfer) {
 				e.dataTransfer.dropEffect = 'move';
 			}
 
-			this.clearDropIndicators();
-			const rect = columnEl.getBoundingClientRect();
-			const midX = rect.left + rect.width / 2;
+			this.removePlaceholder();
 
-			if (e.clientX < midX) {
-				columnEl.addClass('drop-before');
+			const columns = Array.from(boardEl.querySelectorAll('.kanban-column:not(.dragging)')) as HTMLElement[];
+			let insertBefore: Element | null = null;
+
+			for (const col of columns) {
+				const rect = col.getBoundingClientRect();
+				if (e.clientX < rect.left + rect.width / 2) {
+					insertBefore = col;
+					break;
+				}
+			}
+
+			const placeholder = document.createElement('div');
+			placeholder.className = 'kanban-column-placeholder';
+			if (insertBefore) {
+				insertBefore.before(placeholder);
 			} else {
-				columnEl.addClass('drop-after');
+				const addBtn = boardEl.querySelector('.kanban-add-column-btn');
+				if (addBtn) addBtn.before(placeholder);
+				else boardEl.appendChild(placeholder);
 			}
+			this.dragPlaceholder = placeholder;
 		});
 
-		columnEl.addEventListener('dragleave', (e) => {
-			if (!columnEl.contains(e.relatedTarget as Node)) {
-				columnEl.removeClass('drop-before', 'drop-after');
-			}
-		});
-
-		columnEl.addEventListener('drop', (e) => {
-			e.preventDefault();
+		boardEl.addEventListener('dragleave', (e) => {
 			if (!this.dragState || this.dragState.type !== 'column') return;
+			if (!boardEl.contains(e.relatedTarget as Node)) {
+				this.removePlaceholder();
+			}
+		});
 
-			const rect = columnEl.getBoundingClientRect();
-			const midX = rect.left + rect.width / 2;
-			let targetIndex = e.clientX < midX ? colIndex : colIndex + 1;
+		boardEl.addEventListener('drop', (e) => {
+			if (!this.dragState || this.dragState.type !== 'column') return;
+			e.preventDefault();
+
+			const columns = Array.from(boardEl.querySelectorAll('.kanban-column:not(.dragging)')) as HTMLElement[];
+			let targetIndex = this.board.columns.length;
+
+			for (const col of columns) {
+				const rect = col.getBoundingClientRect();
+				if (e.clientX < rect.left + rect.width / 2) {
+					targetIndex = parseInt(col.dataset.colIndex ?? '0');
+					break;
+				}
+			}
 
 			this.moveColumn(this.dragState.sourceColIndex, targetIndex);
+			this.removePlaceholder();
 			this.clearDropIndicators();
 		});
+	}
+
+	private removePlaceholder(): void {
+		if (this.dragPlaceholder) {
+			this.dragPlaceholder.remove();
+			this.dragPlaceholder = null;
+		}
+		this.contentEl.querySelectorAll('.kanban-column').forEach(col => col.classList.remove('drag-target-column'));
 	}
 
 	// --- Data operations ---
@@ -566,6 +650,15 @@ export class KanbanView extends ItemView {
 		await this.render();
 	}
 
+	private async archiveColumn(colIndex: number): Promise<void> {
+		const column = this.board.columns[colIndex];
+		if (!column) return;
+		this.pushUndo();
+		column.archived = true;
+		await this.saveBoard();
+		await this.render();
+	}
+
 	// --- Inline Editing ---
 
 	private startEditingColumnTitle(colIndex: number, headerEl: HTMLElement, column: KanbanColumn): void {
@@ -580,7 +673,6 @@ export class KanbanView extends ItemView {
 		input.className = 'kanban-edit-input kanban-column-title-edit';
 
 		titleSpan.replaceWith(input);
-		headerEl.draggable = false;
 		input.focus();
 		input.select();
 
@@ -594,7 +686,6 @@ export class KanbanView extends ItemView {
 				column.title = newTitle;
 				await this.saveBoard();
 			}
-			headerEl.draggable = true;
 			await this.render();
 		};
 
@@ -605,7 +696,6 @@ export class KanbanView extends ItemView {
 				input.blur();
 			} else if (e.key === 'Escape') {
 				saved = true;
-				headerEl.draggable = true;
 				this.render();
 			}
 		});
@@ -628,7 +718,6 @@ export class KanbanView extends ItemView {
 
 		titleEl.empty();
 		titleEl.appendChild(input);
-		cardEl.draggable = false;
 		input.focus();
 		input.select();
 
@@ -642,7 +731,6 @@ export class KanbanView extends ItemView {
 				card.title = newTitle;
 				await this.saveBoard();
 			}
-			cardEl.draggable = true;
 			await this.render();
 		};
 
@@ -653,7 +741,6 @@ export class KanbanView extends ItemView {
 				input.blur();
 			} else if (e.key === 'Escape') {
 				saved = true;
-				cardEl.draggable = true;
 				this.render();
 			}
 		});
@@ -678,7 +765,6 @@ export class KanbanView extends ItemView {
 
 		bodyEl.empty();
 		bodyEl.appendChild(textarea);
-		cardEl.draggable = false;
 		textarea.focus();
 
 		const autoResize = () => {
@@ -706,7 +792,6 @@ export class KanbanView extends ItemView {
 				card.rawBodyLines = newLines;
 			}
 			await this.saveBoard();
-			cardEl.draggable = true;
 			await this.render();
 		};
 
@@ -714,7 +799,6 @@ export class KanbanView extends ItemView {
 		textarea.addEventListener('keydown', (e) => {
 			if (e.key === 'Escape') {
 				saved = true;
-				cardEl.draggable = true;
 				this.render();
 			}
 		});
@@ -943,6 +1027,7 @@ export class KanbanView extends ItemView {
 			.forEach(el => {
 				el.classList.remove('drop-above', 'drop-below', 'drop-before', 'drop-after', 'drop-at-end');
 			});
+		this.removePlaceholder();
 	}
 
 	private getDisplayBody(rawLines: string[]): string {
