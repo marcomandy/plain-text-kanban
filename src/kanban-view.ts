@@ -580,6 +580,12 @@ export class KanbanView extends ItemView {
 		dragHandle.addEventListener('mouseup', () => {
 			cardEl.draggable = false;
 		});
+		dragHandle.addEventListener('touchstart', () => {
+			cardEl.draggable = true;
+		}, {passive: true});
+		dragHandle.addEventListener('touchend', () => {
+			cardEl.draggable = false;
+		});
 
 		cardEl.addEventListener('dragstart', (e) => {
 			if (!cardEl.draggable) {
@@ -693,6 +699,12 @@ export class KanbanView extends ItemView {
 			columnEl.draggable = true;
 		});
 		dragHandle.addEventListener('mouseup', () => {
+			columnEl.draggable = false;
+		});
+		dragHandle.addEventListener('touchstart', () => {
+			columnEl.draggable = true;
+		}, {passive: true});
+		dragHandle.addEventListener('touchend', () => {
 			columnEl.draggable = false;
 		});
 
