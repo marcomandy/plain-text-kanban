@@ -774,30 +774,3 @@
 .kanban-board-settings-label-name {
 	font-size: 13px;
 }
-
-.kanban-board-settings-control {
-	display: flex;
-	gap: 4px;
-	flex-shrink: 0;
-}
-
-.kanban-board-settings-btn {
-	font-size: 11px;
-	padding: 2px 8px;
-	border-radius: 4px;
-	border: 1px solid var(--background-modifier-border);
-	background: var(--background-secondary);
-	color: var(--text-muted);
-	cursor: pointer;
-	white-space: nowrap;
-}
-
-.kanban-board-settings-btn:hover {
-	background: var(--background-modifier-hover);
-}
-
-.kanban-board-settings-btn.is-active {
-	background: var(--interactive-accent);
-	color: var(--text-on-accent);
-	border-color: var(--interactive-accent);
-}

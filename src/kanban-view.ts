@@ -2,7 +2,7 @@ import {ItemView, WorkspaceLeaf, TFile, MarkdownRenderer, Component, ViewStateRe
 import {KanbanBoard, KanbanColumn, KanbanCard, Swimlane, NO_LABEL_TOKEN} from './types';
 import {parseKanban} from './parser';
 import {serializeKanban} from './serializer';
-import {KanbanPluginSettings, resolveSettings, BoardViewOverrides} from './settings';
+import {KanbanPluginSettings, resolveSettings} from './settings';
 import type KanbanPlugin from './main';
 
 export const KANBAN_VIEW_TYPE = 'plain-text-kanban';
@@ -111,8 +111,8 @@ export class KanbanView extends ItemView {
 	}
 
 	private getEffectiveSettings(): KanbanPluginSettings {
-		const overrides = this.plugin.getBoardOverrides(this.filePath);
-		return resolveSettings(this.plugin.settings, overrides);
+		const overrides = this.plugin.getBoardSettings(this.filePath);
+		return resolveSettings(overrides);
 	}
 
 	private showBoardSettingsPopover(evt: MouseEvent): void {
@@ -122,64 +122,32 @@ export class KanbanView extends ItemView {
 		const popover = document.createElement('div');
 		popover.className = 'kanban-board-settings-popover';
 
-		const overrides = this.plugin.getBoardOverrides(this.filePath);
+		const effective = this.getEffectiveSettings();
 
-		const settingsItems: {key: keyof KanbanPluginSettings; label: string; desc: string}[] = [
-			{key: 'hideCardCounter', label: 'Hide card counter', desc: 'Hide card count badges'},
-			{key: 'hideAddLabelButtons', label: 'Hide "Add label" buttons', desc: 'Hide "+ Add label" on cards'},
-			{key: 'hideAddDescription', label: 'Hide "Add description"', desc: 'Hide description placeholder'},
-			{key: 'hoverOnlyButtons', label: 'Show buttons on hover only', desc: 'Show archive/delete on hover'},
-			{key: 'hideSwimlanes', label: 'Hide swimlanes', desc: 'Show a single unfiltered board'},
+		const settingsItems: {key: keyof KanbanPluginSettings; label: string}[] = [
+			{key: 'hideCardCounter', label: 'Hide card counter'},
+			{key: 'hideAddLabelButtons', label: 'Hide "Add label" buttons'},
+			{key: 'hideAddDescription', label: 'Hide "Add description"'},
+			{key: 'hoverOnlyButtons', label: 'Show buttons on hover only'},
+			{key: 'hideSwimlanes', label: 'Hide swimlanes'},
 		];
 
 		const title = popover.createDiv({cls: 'kanban-board-settings-title'});
 		title.setText('Board view settings');
 
 		const hint = popover.createDiv({cls: 'kanban-board-settings-hint'});
-		hint.setText('Override global defaults for this board. Stored locally.');
+		hint.setText('Stored locally on this device.');
 
 		for (const item of settingsItems) {
 			const row = popover.createDiv({cls: 'kanban-board-settings-row'});
 			const labelEl = row.createDiv({cls: 'kanban-board-settings-label'});
 			labelEl.createDiv({text: item.label, cls: 'kanban-board-settings-label-name'});
 
-			const controlEl = row.createDiv({cls: 'kanban-board-settings-control'});
-
-			const currentOverride = overrides[item.key];
-			const globalValue = this.plugin.settings[item.key];
-
-			// Three buttons: Default | On | Off
-			const btnDefault = controlEl.createEl('button', {
-				cls: 'kanban-board-settings-btn' + (currentOverride === undefined ? ' is-active' : ''),
-				text: `Default (${globalValue ? 'on' : 'off'})`,
-			});
-			const btnOn = controlEl.createEl('button', {
-				cls: 'kanban-board-settings-btn' + (currentOverride === true ? ' is-active' : ''),
-				text: 'On',
-			});
-			const btnOff = controlEl.createEl('button', {
-				cls: 'kanban-board-settings-btn' + (currentOverride === false ? ' is-active' : ''),
-				text: 'Off',
-			});
-
-			const updateActive = (active: HTMLElement) => {
-				btnDefault.removeClass('is-active');
-				btnOn.removeClass('is-active');
-				btnOff.removeClass('is-active');
-				active.addClass('is-active');
-			};
-
-			btnDefault.addEventListener('click', async () => {
-				updateActive(btnDefault);
-				await this.plugin.setBoardOverride(this.filePath, item.key, undefined);
-			});
-			btnOn.addEventListener('click', async () => {
-				updateActive(btnOn);
-				await this.plugin.setBoardOverride(this.filePath, item.key, true);
-			});
-			btnOff.addEventListener('click', async () => {
-				updateActive(btnOff);
-				await this.plugin.setBoardOverride(this.filePath, item.key, false);
+			const toggle = row.createDiv({cls: 'checkbox-container' + (effective[item.key] ? ' is-enabled' : '')});
+			toggle.addEventListener('click', async () => {
+				const newValue = !toggle.hasClass('is-enabled');
+				toggle.toggleClass('is-enabled', newValue);
+				await this.plugin.setBoardSetting(this.filePath, item.key, newValue);
 			});
 		}
 
