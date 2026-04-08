@@ -23,6 +23,7 @@ export class KanbanView extends ItemView {
 	private undoStack: string[] = [];
 	private redoStack: string[] = [];
 	private dragPlaceholder: HTMLElement | null = null;
+	private dragHandleActive = false;
 	private static readonly MAX_HISTORY = 50;
 
 	constructor(leaf: WorkspaceLeaf, private plugin: KanbanPlugin) {
@@ -496,6 +497,7 @@ export class KanbanView extends ItemView {
 		const columnEl = boardEl.createDiv({cls: 'kanban-column'});
 		columnEl.dataset.colIndex = String(colIndex);
 		columnEl.dataset.swimlaneIndex = String(swimlaneIndex);
+		columnEl.draggable = true;
 
 		// Column header
 		const headerEl = columnEl.createDiv({cls: 'kanban-column-header'});
@@ -562,6 +564,7 @@ export class KanbanView extends ItemView {
 	): Promise<void> {
 		const cardEl = bodyEl.createDiv({cls: 'kanban-card'});
 		cardEl.dataset.cardIndex = String(cardIndex);
+		cardEl.draggable = true;
 
 		// Drag handle
 		const dragHandle = cardEl.createDiv({cls: 'kanban-drag-handle kanban-card-drag-handle'});
@@ -637,14 +640,14 @@ export class KanbanView extends ItemView {
 
 	private setupCardDrag(dragHandle: HTMLElement, cardEl: HTMLElement, colIndex: number, cardIndex: number, swimlaneIndex: number): void {
 		dragHandle.addEventListener('mousedown', () => {
-			cardEl.draggable = true;
+			this.dragHandleActive = true;
 		});
-		dragHandle.addEventListener('mouseup', () => {
-			cardEl.draggable = false;
-		});
+		dragHandle.addEventListener('touchstart', () => {
+			this.dragHandleActive = true;
+		}, {passive: true});
 
 		cardEl.addEventListener('dragstart', (e) => {
-			if (!cardEl.draggable) {
+			if (!this.dragHandleActive) {
 				e.preventDefault();
 				return;
 			}
@@ -658,7 +661,7 @@ export class KanbanView extends ItemView {
 		});
 
 		cardEl.addEventListener('dragend', () => {
-			cardEl.draggable = false;
+			this.dragHandleActive = false;
 			cardEl.removeClass('dragging');
 			this.dragState = null;
 			this.removePlaceholder();
@@ -752,14 +755,14 @@ export class KanbanView extends ItemView {
 
 	private setupColumnDrag(dragHandle: HTMLElement, columnEl: HTMLElement, colIndex: number, swimlaneIndex: number): void {
 		dragHandle.addEventListener('mousedown', () => {
-			columnEl.draggable = true;
+			this.dragHandleActive = true;
 		});
-		dragHandle.addEventListener('mouseup', () => {
-			columnEl.draggable = false;
-		});
+		dragHandle.addEventListener('touchstart', () => {
+			this.dragHandleActive = true;
+		}, {passive: true});
 
 		columnEl.addEventListener('dragstart', (e) => {
-			if (!columnEl.draggable) {
+			if (!this.dragHandleActive) {
 				e.preventDefault();
 				return;
 			}
@@ -772,7 +775,7 @@ export class KanbanView extends ItemView {
 		});
 
 		columnEl.addEventListener('dragend', () => {
-			columnEl.draggable = false;
+			this.dragHandleActive = false;
 			columnEl.removeClass('dragging');
 			this.dragState = null;
 			this.removePlaceholder();
