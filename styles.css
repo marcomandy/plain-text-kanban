@@ -735,3 +735,69 @@
 .kanban-swimlane-label-option:hover {
 	background: var(--background-modifier-hover);
 }
+
+/* ── Board-level settings popover ── */
+
+.kanban-board-settings-popover {
+	position: fixed;
+	z-index: 1000;
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 8px;
+	padding: 12px 14px;
+	width: 320px;
+	box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+	max-height: 80vh;
+	overflow-y: auto;
+}
+
+.kanban-board-settings-title {
+	font-weight: 600;
+	font-size: 14px;
+	margin-bottom: 2px;
+}
+
+.kanban-board-settings-hint {
+	font-size: 11px;
+	color: var(--text-muted);
+	margin-bottom: 10px;
+}
+
+.kanban-board-settings-row {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	padding: 5px 0;
+	gap: 8px;
+}
+
+.kanban-board-settings-label-name {
+	font-size: 13px;
+}
+
+.kanban-board-settings-control {
+	display: flex;
+	gap: 4px;
+	flex-shrink: 0;
+}
+
+.kanban-board-settings-btn {
+	font-size: 11px;
+	padding: 2px 8px;
+	border-radius: 4px;
+	border: 1px solid var(--background-modifier-border);
+	background: var(--background-secondary);
+	color: var(--text-muted);
+	cursor: pointer;
+	white-space: nowrap;
+}
+
+.kanban-board-settings-btn:hover {
+	background: var(--background-modifier-hover);
+}
+
+.kanban-board-settings-btn.is-active {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border-color: var(--interactive-accent);
+}

@@ -17,6 +17,20 @@ export const DEFAULT_SETTINGS: KanbanPluginSettings = {
 	hideSwimlanes: false,
 };
 
+/** Per-board overrides — every key is optional (absent = use global default). */
+export type BoardViewOverrides = Partial<KanbanPluginSettings>;
+
+/** Shape of what we persist via saveData / loadData. */
+export interface PersistedData extends KanbanPluginSettings {
+	boardSettings?: Record<string, BoardViewOverrides>;
+}
+
+/** Resolve effective settings for a board by merging global defaults with per-board overrides. */
+export function resolveSettings(global: KanbanPluginSettings, overrides?: BoardViewOverrides): KanbanPluginSettings {
+	if (!overrides) return {...global};
+	return {...global, ...overrides};
+}
+
 export class KanbanSettingTab extends PluginSettingTab {
 	plugin: KanbanPlugin;
 

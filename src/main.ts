@@ -1,9 +1,10 @@
 import {MarkdownView, Plugin, TFile, Menu} from 'obsidian';
 import {KanbanView, KANBAN_VIEW_TYPE} from './kanban-view';
-import {KanbanPluginSettings, DEFAULT_SETTINGS, KanbanSettingTab} from './settings';
+import {KanbanPluginSettings, DEFAULT_SETTINGS, KanbanSettingTab, BoardViewOverrides, PersistedData} from './settings';
 
 export default class KanbanPlugin extends Plugin {
 	settings: KanbanPluginSettings = DEFAULT_SETTINGS;
+	boardSettings: Record<string, BoardViewOverrides> = {};
 
 	async onload() {
 		await this.loadSettings();
@@ -49,15 +50,38 @@ export default class KanbanPlugin extends Plugin {
 	}
 
 	async loadSettings(): Promise<void> {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		const raw: PersistedData = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		const {boardSettings, ...global} = raw;
+		this.settings = global;
+		this.boardSettings = boardSettings ?? {};
 	}
 
 	async saveSettings(): Promise<void> {
-		await this.saveData(this.settings);
+		await this.saveData({...this.settings, boardSettings: this.boardSettings} as PersistedData);
 		this.app.workspace.getLeavesOfType(KANBAN_VIEW_TYPE).forEach(leaf => {
 			if (leaf.view instanceof KanbanView) {
 				leaf.view.refreshSettings();
 			}
 		});
+	}
+
+	getBoardOverrides(filePath: string): BoardViewOverrides {
+		return this.boardSettings[filePath] ?? {};
+	}
+
+	async setBoardOverride(filePath: string, key: keyof KanbanPluginSettings, value: boolean | undefined): Promise<void> {
+		if (!this.boardSettings[filePath]) {
+			this.boardSettings[filePath] = {};
+		}
+		if (value === undefined) {
+			delete this.boardSettings[filePath]![key];
+			// Clean up empty override objects
+			if (Object.keys(this.boardSettings[filePath]!).length === 0) {
+				delete this.boardSettings[filePath];
+			}
+		} else {
+			(this.boardSettings[filePath] as Record<string, boolean>)[key] = value;
+		}
+		await this.saveSettings();
 	}
 }

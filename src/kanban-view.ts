@@ -2,6 +2,7 @@ import {ItemView, WorkspaceLeaf, TFile, MarkdownRenderer, Component, ViewStateRe
 import {KanbanBoard, KanbanColumn, KanbanCard, Swimlane, NO_LABEL_TOKEN} from './types';
 import {parseKanban} from './parser';
 import {serializeKanban} from './serializer';
+import {KanbanPluginSettings, resolveSettings, BoardViewOverrides} from './settings';
 import type KanbanPlugin from './main';
 
 export const KANBAN_VIEW_TYPE = 'plain-text-kanban';
@@ -55,6 +56,10 @@ export class KanbanView extends ItemView {
 			});
 		});
 
+		this.addAction('settings', 'Board view settings', (e) => {
+			this.showBoardSettingsPopover(e as unknown as MouseEvent);
+		});
+
 		this.registerEvent(
 			this.app.vault.on('modify', (file) => {
 				if (file instanceof TFile && file.path === this.filePath && !this.isWriting) {
@@ -103,6 +108,95 @@ export class KanbanView extends ItemView {
 
 	refreshSettings(): void {
 		this.render();
+	}
+
+	private getEffectiveSettings(): KanbanPluginSettings {
+		const overrides = this.plugin.getBoardOverrides(this.filePath);
+		return resolveSettings(this.plugin.settings, overrides);
+	}
+
+	private showBoardSettingsPopover(evt: MouseEvent): void {
+		const existing = document.querySelector('.kanban-board-settings-popover');
+		if (existing) { existing.remove(); return; }
+
+		const popover = document.createElement('div');
+		popover.className = 'kanban-board-settings-popover';
+
+		const overrides = this.plugin.getBoardOverrides(this.filePath);
+
+		const settingsItems: {key: keyof KanbanPluginSettings; label: string; desc: string}[] = [
+			{key: 'hideCardCounter', label: 'Hide card counter', desc: 'Hide card count badges'},
+			{key: 'hideAddLabelButtons', label: 'Hide "Add label" buttons', desc: 'Hide "+ Add label" on cards'},
+			{key: 'hideAddDescription', label: 'Hide "Add description"', desc: 'Hide description placeholder'},
+			{key: 'hoverOnlyButtons', label: 'Show buttons on hover only', desc: 'Show archive/delete on hover'},
+			{key: 'hideSwimlanes', label: 'Hide swimlanes', desc: 'Show a single unfiltered board'},
+		];
+
+		const title = popover.createDiv({cls: 'kanban-board-settings-title'});
+		title.setText('Board view settings');
+
+		const hint = popover.createDiv({cls: 'kanban-board-settings-hint'});
+		hint.setText('Override global defaults for this board. Stored locally.');
+
+		for (const item of settingsItems) {
+			const row = popover.createDiv({cls: 'kanban-board-settings-row'});
+			const labelEl = row.createDiv({cls: 'kanban-board-settings-label'});
+			labelEl.createDiv({text: item.label, cls: 'kanban-board-settings-label-name'});
+
+			const controlEl = row.createDiv({cls: 'kanban-board-settings-control'});
+
+			const currentOverride = overrides[item.key];
+			const globalValue = this.plugin.settings[item.key];
+
+			// Three buttons: Default | On | Off
+			const btnDefault = controlEl.createEl('button', {
+				cls: 'kanban-board-settings-btn' + (currentOverride === undefined ? ' is-active' : ''),
+				text: `Default (${globalValue ? 'on' : 'off'})`,
+			});
+			const btnOn = controlEl.createEl('button', {
+				cls: 'kanban-board-settings-btn' + (currentOverride === true ? ' is-active' : ''),
+				text: 'On',
+			});
+			const btnOff = controlEl.createEl('button', {
+				cls: 'kanban-board-settings-btn' + (currentOverride === false ? ' is-active' : ''),
+				text: 'Off',
+			});
+
+			const updateActive = (active: HTMLElement) => {
+				btnDefault.removeClass('is-active');
+				btnOn.removeClass('is-active');
+				btnOff.removeClass('is-active');
+				active.addClass('is-active');
+			};
+
+			btnDefault.addEventListener('click', async () => {
+				updateActive(btnDefault);
+				await this.plugin.setBoardOverride(this.filePath, item.key, undefined);
+			});
+			btnOn.addEventListener('click', async () => {
+				updateActive(btnOn);
+				await this.plugin.setBoardOverride(this.filePath, item.key, true);
+			});
+			btnOff.addEventListener('click', async () => {
+				updateActive(btnOff);
+				await this.plugin.setBoardOverride(this.filePath, item.key, false);
+			});
+		}
+
+		document.body.appendChild(popover);
+
+		// Position near the clicked element
+		const btnRect = (evt.target as HTMLElement).getBoundingClientRect();
+		popover.style.top = `${btnRect.bottom + 4}px`;
+		popover.style.right = `${document.body.clientWidth - btnRect.right}px`;
+
+		const onClickOutside = (e: MouseEvent) => {
+			if (!popover.contains(e.target as Node) && e.target !== evt.target) {
+				popover.remove();
+				document.removeEventListener('mousedown', onClickOutside);
+			}
+		};
+		setTimeout(() => document.addEventListener('mousedown', onClickOutside), 0);
 	}
 
 	private async loadAndRender(): Promise<void> {
@@ -178,7 +272,7 @@ export class KanbanView extends ItemView {
 			this.board.swimlanes = [{labels: []}];
 		}
 
-		const settings = this.plugin.settings;
+		const settings = this.getEffectiveSettings();
 
 		if (settings.hideSwimlanes) {
 			const boardEl = container.createDiv({cls: 'kanban-board'});
@@ -221,7 +315,7 @@ export class KanbanView extends ItemView {
 	}
 
 	private applyBoardClasses(boardEl: HTMLElement): void {
-		const settings = this.plugin.settings;
+		const settings = this.getEffectiveSettings();
 		if (settings.hideCardCounter) boardEl.addClass('kanban-hide-counter');
 		if (settings.hideAddLabelButtons) boardEl.addClass('kanban-hide-add-label');
 		if (settings.hideAddDescription) boardEl.addClass('kanban-hide-add-description');
