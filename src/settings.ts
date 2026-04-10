@@ -2,6 +2,7 @@ export interface KanbanPluginSettings {
 	hideCardCounter: boolean;
 	hideAddLabelButtons: boolean;
 	hideAddDescription: boolean;
+	hideAddChecklist: boolean;
 	hoverOnlyButtons: boolean;
 	hideSwimlanes: boolean;
 }
@@ -10,6 +11,7 @@ export const DEFAULT_SETTINGS: KanbanPluginSettings = {
 	hideCardCounter: false,
 	hideAddLabelButtons: false,
 	hideAddDescription: false,
+	hideAddChecklist: false,
 	hoverOnlyButtons: false,
 	hideSwimlanes: false,
 };

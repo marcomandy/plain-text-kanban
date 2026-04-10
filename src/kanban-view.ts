@@ -38,7 +38,9 @@ export class KanbanView extends ItemView {
 		const file = this.filePath
 			? this.app.vault.getAbstractFileByPath(this.filePath)
 			: null;
-		return file ? `Kanban: ${file.name}` : 'Kanban Board';
+		if (!file) return 'Kanban Board';
+		const displayName = file.name.replace(/\.md$/, '');
+		return `Kanban: ${displayName}`;
 	}
 
 	getIcon(): string {
@@ -101,6 +103,8 @@ export class KanbanView extends ItemView {
 			await this.loadAndRender();
 		}
 		await super.setState(state, result);
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		(this.leaf as any).updateHeader?.();
 	}
 
 	getState(): Record<string, unknown> {
@@ -129,6 +133,7 @@ export class KanbanView extends ItemView {
 			{key: 'hideCardCounter', label: 'Hide card counter'},
 			{key: 'hideAddLabelButtons', label: 'Hide "Add label" buttons'},
 			{key: 'hideAddDescription', label: 'Hide "Add description"'},
+			{key: 'hideAddChecklist', label: 'Hide "Add checklist"'},
 			{key: 'hoverOnlyButtons', label: 'Show buttons on hover only'},
 			{key: 'hideSwimlanes', label: 'Hide swimlanes'},
 		];
@@ -288,6 +293,7 @@ export class KanbanView extends ItemView {
 		if (settings.hideCardCounter) boardEl.addClass('kanban-hide-counter');
 		if (settings.hideAddLabelButtons) boardEl.addClass('kanban-hide-add-label');
 		if (settings.hideAddDescription) boardEl.addClass('kanban-hide-add-description');
+		if (settings.hideAddChecklist) boardEl.addClass('kanban-hide-add-checklist');
 		if (settings.hoverOnlyButtons) boardEl.addClass('kanban-hover-buttons');
 	}
 
@@ -632,6 +638,14 @@ export class KanbanView extends ItemView {
 				this.startEditingCardBody(colIndex, cardIndex, placeholderEl, card, cardEl);
 			});
 		}
+
+		// Add checklist button
+		const addChecklistBtn = cardEl.createDiv({cls: 'kanban-add-checklist-btn'});
+		addChecklistBtn.setText('+ Add checklist');
+		addChecklistBtn.addEventListener('click', (e) => {
+			e.stopPropagation();
+			this.startChecklistOnCard(colIndex, cardIndex, card, cardEl);
+		});
 
 		this.setupCardDrag(dragHandle, cardEl, colIndex, cardIndex, swimlaneIndex);
 	}
@@ -1110,7 +1124,31 @@ export class KanbanView extends ItemView {
 
 		textarea.addEventListener('blur', () => save());
 		textarea.addEventListener('keydown', (e) => {
-			if (e.key === 'Escape') {
+			if (e.key === 'Enter') {
+				const pos = textarea.selectionStart;
+				const text = textarea.value;
+				const lineStart = text.lastIndexOf('\n', pos - 1) + 1;
+				const currentLine = text.substring(lineStart, pos);
+
+				// Auto-continue checklist: if current line is a non-empty checklist item
+				if (/^- \[[ x]\] .+/.test(currentLine)) {
+					e.preventDefault();
+					const before = text.substring(0, pos);
+					const after = text.substring(textarea.selectionEnd);
+					textarea.value = before + '\n- [ ] ' + after;
+					const newPos = pos + 7;
+					textarea.selectionStart = textarea.selectionEnd = newPos;
+					autoResize();
+				} else if (/^- \[[ x]\] $/.test(currentLine)) {
+					// Empty checklist item — remove it to stop the list
+					e.preventDefault();
+					const before = text.substring(0, lineStart);
+					const after = text.substring(pos);
+					textarea.value = before + after;
+					textarea.selectionStart = textarea.selectionEnd = lineStart;
+					autoResize();
+				}
+			} else if (e.key === 'Escape') {
 				saved = true;
 				this.render();
 			}
@@ -1123,6 +1161,91 @@ export class KanbanView extends ItemView {
 		if (nonEmpty.length === 0) return '\t\t';
 		const match = nonEmpty[0]?.match(/^(\s+)/);
 		return match?.[1] ?? '\t\t';
+	}
+
+	private startChecklistOnCard(colIndex: number, cardIndex: number, card: KanbanCard, cardEl: HTMLElement): void {
+		const prefix = card.rawBodyLines.length > 0 ? this.getBodyPrefix(card.rawBodyLines) : '\t\t';
+		const displayBody = this.getDisplayBody(card.rawBodyLines);
+		const newBody = displayBody ? displayBody + '\n- [ ] ' : '- [ ] ';
+
+		// Find or create body element to start editing
+		let bodyEl = cardEl.querySelector('.kanban-card-body') as HTMLElement | null;
+		if (!bodyEl) {
+			bodyEl = cardEl.querySelector('.kanban-card-body-placeholder') as HTMLElement | null;
+		}
+		if (!bodyEl) {
+			bodyEl = cardEl.createDiv({cls: 'kanban-card-body'});
+		}
+
+		if (bodyEl.querySelector('.kanban-edit-textarea')) return;
+
+		const textarea = document.createElement('textarea');
+		textarea.value = newBody;
+		textarea.className = 'kanban-edit-textarea kanban-card-body-edit';
+
+		bodyEl.empty();
+		bodyEl.appendChild(textarea);
+		textarea.focus();
+		textarea.selectionStart = textarea.selectionEnd = textarea.value.length;
+
+		const autoResize = () => {
+			textarea.style.height = 'auto';
+			textarea.style.height = textarea.scrollHeight + 'px';
+		};
+		autoResize();
+		textarea.addEventListener('input', autoResize);
+
+		let saved = false;
+		const save = async () => {
+			if (saved) return;
+			saved = true;
+			const newText = textarea.value;
+			const oldBody = card.rawBodyLines.join('\n');
+			if (newText.trim() === '') {
+				if (oldBody.trim() !== '') this.pushUndo();
+				card.rawBodyLines = [];
+			} else {
+				const newLines = newText.split('\n').map(line => {
+					if (line.trim() === '') return '';
+					return prefix + line;
+				});
+				if (newLines.join('\n') !== oldBody) this.pushUndo();
+				card.rawBodyLines = newLines;
+			}
+			await this.saveBoard();
+			await this.render();
+		};
+
+		textarea.addEventListener('blur', () => save());
+		textarea.addEventListener('keydown', (e) => {
+			if (e.key === 'Enter') {
+				const pos = textarea.selectionStart;
+				const text = textarea.value;
+				const lineStart = text.lastIndexOf('\n', pos - 1) + 1;
+				const currentLine = text.substring(lineStart, pos);
+
+				if (/^- \[[ x]\] .+/.test(currentLine)) {
+					e.preventDefault();
+					const before = text.substring(0, pos);
+					const after = text.substring(textarea.selectionEnd);
+					textarea.value = before + '\n- [ ] ' + after;
+					const newPos = pos + 7;
+					textarea.selectionStart = textarea.selectionEnd = newPos;
+					autoResize();
+				} else if (/^- \[[ x]\] $/.test(currentLine)) {
+					e.preventDefault();
+					const before = text.substring(0, lineStart);
+					const after = text.substring(pos);
+					textarea.value = before + after;
+					textarea.selectionStart = textarea.selectionEnd = lineStart;
+					autoResize();
+				}
+			} else if (e.key === 'Escape') {
+				saved = true;
+				this.render();
+			}
+		});
+		textarea.addEventListener('click', (e) => e.stopPropagation());
 	}
 
 	// --- Labels ---

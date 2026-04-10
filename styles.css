@@ -403,6 +403,20 @@
 	padding: 2px 0;
 }
 
+/* Add checklist button */
+
+.kanban-add-checklist-btn {
+	font-size: 12px;
+	color: var(--text-faint);
+	cursor: pointer;
+	padding: 2px 0;
+	transition: color 0.15s;
+}
+
+.kanban-add-checklist-btn:hover {
+	color: var(--text-muted);
+}
+
 /* Add card / Add column buttons */
 
 .kanban-add-card-btn {
@@ -478,9 +492,12 @@
 	border: 2px dashed var(--interactive-accent);
 	border-radius: 6px;
 	height: 40px;
+	min-height: 40px;
+	flex-shrink: 0;
 	background: var(--background-secondary-alt);
 	opacity: 0.5;
 	pointer-events: none;
+	box-sizing: border-box;
 }
 
 .kanban-column-placeholder {
@@ -511,6 +528,10 @@
 }
 
 .kanban-hide-add-description .kanban-card-body-placeholder {
+	display: none;
+}
+
+.kanban-hide-add-checklist .kanban-add-checklist-btn {
 	display: none;
 }
 
