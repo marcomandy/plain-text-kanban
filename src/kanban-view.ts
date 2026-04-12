@@ -103,8 +103,7 @@ export class KanbanView extends ItemView {
 			await this.loadAndRender();
 		}
 		await super.setState(state, result);
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		(this.leaf as any).updateHeader?.();
+		this.updateViewHeader();
 	}
 
 	getState(): Record<string, unknown> {
@@ -1457,6 +1456,13 @@ export class KanbanView extends ItemView {
 	}
 
 	// --- Helpers ---
+
+	private updateViewHeader(): void {
+		const titleEl = this.containerEl.querySelector('.view-header-title');
+		if (titleEl) {
+			titleEl.textContent = this.getDisplayText();
+		}
+	}
 
 	private clearDropIndicators(): void {
 		this.contentEl.querySelectorAll('.drop-above, .drop-below, .drop-before, .drop-after, .drop-at-end')
