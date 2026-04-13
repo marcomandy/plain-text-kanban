@@ -7,6 +7,12 @@ import type KanbanPlugin from './main';
 
 export const KANBAN_VIEW_TYPE = 'plain-text-kanban';
 
+function setCssProps(el: HTMLElement, props: Record<string, string>): void {
+	for (const [key, value] of Object.entries(props)) {
+		el.style.setProperty(key, value);
+	}
+}
+
 interface DragState {
 	type: 'card' | 'column';
 	sourceColIndex: number;
@@ -289,7 +295,7 @@ export class KanbanView extends ItemView {
 				}
 
 				const addBtn = swimlanesContainer.createDiv({cls: 'kanban-add-swimlane-btn'});
-				addBtn.setText('+ Add swimlane');
+				addBtn.setText('+ add swimlane');
 				const insertIdx = i + 1;
 				addBtn.addEventListener('click', () => void this.addSwimlane(insertIdx));
 			}
@@ -308,7 +314,7 @@ export class KanbanView extends ItemView {
 	private async renderBoardContent(boardEl: HTMLElement, labelFilter: string[] | null, swimlaneIndex: number): Promise<void> {
 		if (this.board.columns.length === 0) {
 			const addColBtn = boardEl.createDiv({cls: 'kanban-add-column-btn'});
-			addColBtn.setText('+ Add column');
+			addColBtn.setText('+ add column');
 			addColBtn.addEventListener('click', () => void this.addColumn());
 			return;
 		}
@@ -324,7 +330,7 @@ export class KanbanView extends ItemView {
 		this.setupBoardDropZone(boardEl, swimlaneIndex);
 
 		const addColBtn = boardEl.createDiv({cls: 'kanban-add-column-btn'});
-		addColBtn.setText('+ Add column');
+		addColBtn.setText('+ add column');
 		addColBtn.addEventListener('click', () => void this.addColumn());
 	}
 
@@ -371,7 +377,7 @@ export class KanbanView extends ItemView {
 		}
 
 		const addLabelBtn = headerEl.createEl('button', {cls: 'kanban-swimlane-add-label'});
-		addLabelBtn.setText('+ Label');
+		addLabelBtn.setText('+ label');
 
 		if (this.board.swimlanes.length > 1) {
 			const deleteBtn = headerEl.createEl('button', {cls: 'kanban-swimlane-delete', attr: {'aria-label': 'Delete swimlane'}});
@@ -414,8 +420,7 @@ export class KanbanView extends ItemView {
 				if (!filter || 'no label'.includes(filter)) {
 					const opt = optionsEl.createDiv({cls: 'kanban-swimlane-label-option'});
 					const pill = opt.createSpan({cls: 'kanban-label'});
-					pill.style.setProperty('--label-bg', '#64748b');
-					pill.style.setProperty('--label-color', '#ffffff');
+					setCssProps(pill, {'--label-bg': '#64748b', '--label-color': '#ffffff'});
 					pill.setText('No label');
 					opt.addEventListener('click', () => {
 						void this.addSwimlaneLabel(swimlaneIndex, NO_LABEL_TOKEN);
@@ -567,7 +572,7 @@ export class KanbanView extends ItemView {
 
 		// Add card button
 		const addCardBtn = bodyEl.createDiv({cls: 'kanban-add-card-btn'});
-		addCardBtn.setText('+ Add card');
+		addCardBtn.setText('+ add card');
 		addCardBtn.addEventListener('click', () => void this.addCard(colIndex, labelFilter));
 
 		this.setupCardDropZone(bodyEl, colIndex, swimlaneIndex);
@@ -614,7 +619,7 @@ export class KanbanView extends ItemView {
 			this.renderLabel(labelsEl, tag, colIndex, cardIndex, card);
 		}
 		const addLabelBtn = labelsEl.createEl('button', {cls: 'kanban-label-add', attr: {'aria-label': 'Add label'}});
-		addLabelBtn.setText('+ Add label');
+		addLabelBtn.setText('+ add label');
 		addLabelBtn.addEventListener('click', (e) => {
 			e.stopPropagation();
 			this.addLabelToCard(colIndex, cardIndex, card, cardEl);
@@ -654,7 +659,7 @@ export class KanbanView extends ItemView {
 
 		// Add checklist button
 		const addChecklistBtn = cardEl.createDiv({cls: 'kanban-add-checklist-btn'});
-		addChecklistBtn.setText('+ Add checklist');
+		addChecklistBtn.setText('+ add checklist');
 		addChecklistBtn.addEventListener('click', (e) => {
 			e.stopPropagation();
 			this.startChecklistOnCard(colIndex, cardIndex, card, cardEl);
@@ -1108,8 +1113,8 @@ export class KanbanView extends ItemView {
 		textarea.focus();
 
 		const autoResize = () => {
-			textarea.style.setProperty('height', 'auto');
-			textarea.style.setProperty('height', textarea.scrollHeight + 'px');
+			setCssProps(textarea, {height: 'auto'});
+			setCssProps(textarea, {height: textarea.scrollHeight + 'px'});
 		};
 		autoResize();
 		textarea.addEventListener('input', autoResize);
@@ -1202,8 +1207,8 @@ export class KanbanView extends ItemView {
 		textarea.selectionStart = textarea.selectionEnd = textarea.value.length;
 
 		const autoResize = () => {
-			textarea.style.setProperty('height', 'auto');
-			textarea.style.setProperty('height', textarea.scrollHeight + 'px');
+			setCssProps(textarea, {height: 'auto'});
+			setCssProps(textarea, {height: textarea.scrollHeight + 'px'});
 		};
 		autoResize();
 		textarea.addEventListener('input', autoResize);
