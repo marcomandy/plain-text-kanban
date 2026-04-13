@@ -1,4 +1,4 @@
-import {ItemView, WorkspaceLeaf, TFile, MarkdownRenderer, Component, ViewStateResult, Scope, setIcon} from 'obsidian';
+import {ItemView, WorkspaceLeaf, TFile, MarkdownRenderer, Component, ViewStateResult, Scope, setIcon, Platform} from 'obsidian';
 import {KanbanBoard, KanbanColumn, KanbanCard, Swimlane, NO_LABEL_TOKEN} from './types';
 import {parseKanban} from './parser';
 import {serializeKanban} from './serializer';
@@ -24,6 +24,7 @@ export class KanbanView extends ItemView {
 	private redoStack: string[] = [];
 	private dragPlaceholder: HTMLElement | null = null;
 	private dragHandleActive = false;
+	private externalCleanups: (() => void)[] = [];
 	private static readonly MAX_HISTORY = 50;
 
 	constructor(leaf: WorkspaceLeaf, private plugin: KanbanPlugin) {
@@ -90,6 +91,7 @@ export class KanbanView extends ItemView {
 	}
 
 	async onClose(): Promise<void> {
+		this.cleanupExternals();
 		if (this.renderChild) {
 			this.removeChild(this.renderChild);
 			this.renderChild = null;
@@ -165,13 +167,18 @@ export class KanbanView extends ItemView {
 		popover.style.top = `${btnRect.bottom + 4}px`;
 		popover.style.right = `${document.body.clientWidth - btnRect.right}px`;
 
+		const cleanup = () => {
+			popover.remove();
+			document.removeEventListener('mousedown', onClickOutside);
+		};
+
 		const onClickOutside = (e: MouseEvent) => {
 			if (!popover.contains(e.target as Node) && e.target !== evt.target) {
-				popover.remove();
-				document.removeEventListener('mousedown', onClickOutside);
+				cleanup();
 			}
 		};
 		setTimeout(() => document.addEventListener('mousedown', onClickOutside), 0);
+		this.registerExternalCleanup(cleanup);
 	}
 
 	private async loadAndRender(): Promise<void> {
@@ -190,7 +197,7 @@ export class KanbanView extends ItemView {
 		this.isWriting = true;
 		try {
 			const content = serializeKanban(this.board);
-			await this.app.vault.modify(file, content);
+			await this.app.vault.process(file, () => content);
 		} finally {
 			setTimeout(() => {
 				this.isWriting = false;
@@ -456,13 +463,18 @@ export class KanbanView extends ItemView {
 			}
 		});
 
+		const cleanupDropdown = () => {
+			dropdown.remove();
+			document.removeEventListener('mousedown', onClickOutside);
+		};
+
 		const onClickOutside = (e: MouseEvent) => {
 			if (!dropdown.contains(e.target as Node)) {
-				dropdown.remove();
-				document.removeEventListener('mousedown', onClickOutside);
+				cleanupDropdown();
 			}
 		};
 		setTimeout(() => document.addEventListener('mousedown', onClickOutside), 0);
+		this.registerExternalCleanup(cleanupDropdown);
 	}
 
 	private async addSwimlane(afterIndex: number): Promise<void> {
@@ -1458,6 +1470,17 @@ export class KanbanView extends ItemView {
 
 	// --- Helpers ---
 
+	private registerExternalCleanup(fn: () => void): void {
+		this.externalCleanups.push(fn);
+	}
+
+	private cleanupExternals(): void {
+		for (const fn of this.externalCleanups) {
+			fn();
+		}
+		this.externalCleanups.length = 0;
+	}
+
 	private updateViewHeader(): void {
 		const titleEl = this.containerEl.querySelector('.view-header-title');
 		if (titleEl) {
@@ -1545,20 +1568,22 @@ export class KanbanView extends ItemView {
 	}
 
 	private openOsPath(pathStr: string): void {
-		// Use Electron shell to open the path natively (works for files and folders)
-		interface ElectronShell { openPath(path: string): void }
-		interface ElectronModule { shell?: ElectronShell; remote?: { shell: ElectronShell } }
+		// Use Electron shell on desktop to open the path natively (works for files and folders)
+		if (Platform.isDesktopApp) {
+			interface ElectronShell { openPath(path: string): void }
+			interface ElectronModule { shell?: ElectronShell; remote?: { shell: ElectronShell } }
 
-		const globalObj = globalThis as Record<string, unknown>;
-		if (typeof globalObj.require === 'function') {
-			const electron = (globalObj.require as (id: string) => ElectronModule)('electron');
-			if (electron?.remote?.shell) {
-				electron.remote.shell.openPath(pathStr);
-				return;
-			}
-			if (electron?.shell) {
-				electron.shell.openPath(pathStr);
-				return;
+			const globalObj = globalThis as Record<string, unknown>;
+			if (typeof globalObj.require === 'function') {
+				const electron = (globalObj.require as (id: string) => ElectronModule)('electron');
+				if (electron?.remote?.shell) {
+					electron.remote.shell.openPath(pathStr);
+					return;
+				}
+				if (electron?.shell) {
+					electron.shell.openPath(pathStr);
+					return;
+				}
 			}
 		}
 		// Fallback: open as file:// URI
