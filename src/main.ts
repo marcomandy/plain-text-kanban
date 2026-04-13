@@ -40,7 +40,7 @@ export default class KanbanPlugin extends Plugin {
 	}
 
 	private openAsKanban(filePath: string): void {
-		this.app.workspace.getLeaf(false).setViewState({
+		void this.app.workspace.getLeaf(false).setViewState({
 			type: KANBAN_VIEW_TYPE,
 			state: {file: filePath},
 		});

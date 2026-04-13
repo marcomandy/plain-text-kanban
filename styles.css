@@ -229,6 +229,8 @@
 	cursor: default;
 	height: 22px;
 	box-sizing: border-box;
+	background-color: var(--label-bg, var(--background-modifier-border));
+	color: var(--label-color, var(--text-normal));
 }
 
 .kanban-label-name {
@@ -621,6 +623,8 @@
 	white-space: nowrap;
 	height: 22px;
 	box-sizing: border-box;
+	background-color: var(--label-bg, var(--background-modifier-border));
+	color: var(--label-color, var(--text-normal));
 }
 
 .kanban-swimlane-label-remove {
@@ -794,4 +798,17 @@
 
 .kanban-board-settings-label-name {
 	font-size: 13px;
+}
+
+/* Label editing state */
+
+.kanban-label.kanban-label-editing {
+	background-color: var(--background-primary);
+	color: var(--text-normal);
+}
+
+/* Utility */
+
+.kanban-hidden {
+	display: none;
 }

@@ -38,7 +38,7 @@ export class KanbanView extends ItemView {
 		const file = this.filePath
 			? this.app.vault.getAbstractFileByPath(this.filePath)
 			: null;
-		if (!file) return 'Kanban Board';
+		if (!file) return 'Kanban board';
 		const displayName = file.name.replace(/\.md$/, '');
 		return `Kanban: ${displayName}`;
 	}
@@ -48,12 +48,13 @@ export class KanbanView extends ItemView {
 	}
 
 	async onOpen(): Promise<void> {
+		await super.onOpen();
 		this.contentEl.addClass('kanban-view-content');
 
 		this.scope = new Scope(this.app.scope);
 
 		this.addAction('file-text', 'View as markdown', () => {
-			this.leaf.setViewState({
+			void this.leaf.setViewState({
 				type: 'markdown',
 				state: {file: this.filePath},
 			});
@@ -66,24 +67,24 @@ export class KanbanView extends ItemView {
 		this.registerEvent(
 			this.app.vault.on('modify', (file) => {
 				if (file instanceof TFile && file.path === this.filePath && !this.isWriting) {
-					this.loadAndRender();
+					void this.loadAndRender();
 				}
 			})
 		);
 
 		this.scope.register(['Mod'], 'z', (e) => {
 			e.preventDefault();
-			this.undo();
+			void this.undo();
 			return false;
 		});
 		this.scope.register(['Mod', 'Shift'], 'z', (e) => {
 			e.preventDefault();
-			this.redo();
+			void this.redo();
 			return false;
 		});
 		this.scope.register(['Mod'], 'y', (e) => {
 			e.preventDefault();
-			this.redo();
+			void this.redo();
 			return false;
 		});
 	}
@@ -94,6 +95,7 @@ export class KanbanView extends ItemView {
 			this.renderChild = null;
 		}
 		this.contentEl.empty();
+		await super.onClose();
 	}
 
 	async setState(state: unknown, result: ViewStateResult): Promise<void> {
@@ -111,7 +113,7 @@ export class KanbanView extends ItemView {
 	}
 
 	refreshSettings(): void {
-		this.render();
+		void this.render();
 	}
 
 	private getEffectiveSettings(): KanbanPluginSettings {
@@ -149,10 +151,10 @@ export class KanbanView extends ItemView {
 			labelEl.createDiv({text: item.label, cls: 'kanban-board-settings-label-name'});
 
 			const toggle = row.createDiv({cls: 'checkbox-container' + (effective[item.key] ? ' is-enabled' : '')});
-			toggle.addEventListener('click', async () => {
+			toggle.addEventListener('click', () => {
 				const newValue = !toggle.hasClass('is-enabled');
 				toggle.toggleClass('is-enabled', newValue);
-				await this.plugin.setBoardSetting(this.filePath, item.key, newValue);
+				void this.plugin.setBoardSetting(this.filePath, item.key, newValue);
 			});
 		}
 
@@ -282,7 +284,7 @@ export class KanbanView extends ItemView {
 				const addBtn = swimlanesContainer.createDiv({cls: 'kanban-add-swimlane-btn'});
 				addBtn.setText('+ Add swimlane');
 				const insertIdx = i + 1;
-				addBtn.addEventListener('click', () => this.addSwimlane(insertIdx));
+				addBtn.addEventListener('click', () => void this.addSwimlane(insertIdx));
 			}
 		}
 	}
@@ -300,7 +302,7 @@ export class KanbanView extends ItemView {
 		if (this.board.columns.length === 0) {
 			const addColBtn = boardEl.createDiv({cls: 'kanban-add-column-btn'});
 			addColBtn.setText('+ Add column');
-			addColBtn.addEventListener('click', () => this.addColumn());
+			addColBtn.addEventListener('click', () => void this.addColumn());
 			return;
 		}
 
@@ -316,7 +318,7 @@ export class KanbanView extends ItemView {
 
 		const addColBtn = boardEl.createDiv({cls: 'kanban-add-column-btn'});
 		addColBtn.setText('+ Add column');
-		addColBtn.addEventListener('click', () => this.addColumn());
+		addColBtn.addEventListener('click', () => void this.addColumn());
 	}
 
 	private cardMatchesFilter(card: KanbanCard, labelFilter: string[] | null): boolean {
@@ -346,17 +348,17 @@ export class KanbanView extends ItemView {
 			labelsEl.createSpan({cls: 'kanban-swimlane-all-labels', text: 'All labels'});
 		} else {
 			for (const label of swimlane.labels) {
-				const displayName = label === NO_LABEL_TOKEN ? 'no label' : label;
+				const displayName = label === NO_LABEL_TOKEN ? 'No label' : label;
 				const color = label === NO_LABEL_TOKEN ? '#64748b' : this.getLabelColor(label);
 				const pill = labelsEl.createDiv({cls: 'kanban-swimlane-label'});
-				pill.style.backgroundColor = color;
-				pill.style.color = this.getContrastColor(color);
+				pill.style.setProperty('--label-bg', color);
+				pill.style.setProperty('--label-color', this.getContrastColor(color));
 				pill.createSpan({text: displayName});
 				const removeBtn = pill.createEl('button', {cls: 'kanban-swimlane-label-remove', attr: {'aria-label': 'Remove filter label'}});
 				removeBtn.setText('\u00D7');
 				removeBtn.addEventListener('click', (e) => {
 					e.stopPropagation();
-					this.removeSwimlaneLabel(index, label);
+					void this.removeSwimlaneLabel(index, label);
 				});
 			}
 		}
@@ -369,7 +371,7 @@ export class KanbanView extends ItemView {
 			deleteBtn.setText('\u00D7');
 			deleteBtn.addEventListener('click', (e) => {
 				e.stopPropagation();
-				this.deleteSwimlane(index);
+				void this.deleteSwimlane(index);
 			});
 		}
 	}
@@ -405,11 +407,11 @@ export class KanbanView extends ItemView {
 				if (!filter || 'no label'.includes(filter)) {
 					const opt = optionsEl.createDiv({cls: 'kanban-swimlane-label-option'});
 					const pill = opt.createSpan({cls: 'kanban-label'});
-					pill.style.backgroundColor = '#64748b';
-					pill.style.color = '#ffffff';
-					pill.setText('no label');
+					pill.style.setProperty('--label-bg', '#64748b');
+					pill.style.setProperty('--label-color', '#ffffff');
+					pill.setText('No label');
 					opt.addEventListener('click', () => {
-						this.addSwimlaneLabel(swimlaneIndex, NO_LABEL_TOKEN);
+						void this.addSwimlaneLabel(swimlaneIndex, NO_LABEL_TOKEN);
 					});
 				}
 			}
@@ -420,11 +422,11 @@ export class KanbanView extends ItemView {
 				const opt = optionsEl.createDiv({cls: 'kanban-swimlane-label-option'});
 				const color = this.getLabelColor(label);
 				const pill = opt.createSpan({cls: 'kanban-label'});
-				pill.style.backgroundColor = color;
-				pill.style.color = this.getContrastColor(color);
+				pill.style.setProperty('--label-bg', color);
+				pill.style.setProperty('--label-color', this.getContrastColor(color));
 				pill.setText(label);
 				opt.addEventListener('click', () => {
-					this.addSwimlaneLabel(swimlaneIndex, label);
+					void this.addSwimlaneLabel(swimlaneIndex, label);
 				});
 			}
 		};
@@ -442,9 +444,9 @@ export class KanbanView extends ItemView {
 				const val = input.value.trim().toLowerCase().replace(/^#/, '');
 				if (val) {
 					if (val === 'no-label' || val === 'no label') {
-						this.addSwimlaneLabel(swimlaneIndex, NO_LABEL_TOKEN);
+						void this.addSwimlaneLabel(swimlaneIndex, NO_LABEL_TOKEN);
 					} else {
-						this.addSwimlaneLabel(swimlaneIndex, val);
+						void this.addSwimlaneLabel(swimlaneIndex, val);
 					}
 				} else {
 					dropdown.remove();
@@ -526,14 +528,14 @@ export class KanbanView extends ItemView {
 		setIcon(archiveBtn, 'archive');
 		archiveBtn.addEventListener('click', (e) => {
 			e.stopPropagation();
-			this.archiveColumn(colIndex);
+			void this.archiveColumn(colIndex);
 		});
 
 		const deleteBtn = headerButtons.createEl('button', {cls: 'kanban-column-delete', attr: {'aria-label': 'Delete column'}});
 		deleteBtn.setText('\u00D7');
 		deleteBtn.addEventListener('click', (e) => {
 			e.stopPropagation();
-			this.deleteColumn(colIndex);
+			void this.deleteColumn(colIndex);
 		});
 
 		this.setupColumnDrag(dragHandle, columnEl, colIndex, swimlaneIndex);
@@ -554,7 +556,7 @@ export class KanbanView extends ItemView {
 		// Add card button
 		const addCardBtn = bodyEl.createDiv({cls: 'kanban-add-card-btn'});
 		addCardBtn.setText('+ Add card');
-		addCardBtn.addEventListener('click', () => this.addCard(colIndex, labelFilter));
+		addCardBtn.addEventListener('click', () => void this.addCard(colIndex, labelFilter));
 
 		this.setupCardDropZone(bodyEl, colIndex, swimlaneIndex);
 	}
@@ -586,7 +588,7 @@ export class KanbanView extends ItemView {
 		deleteCardBtn.setText('\u00D7');
 		deleteCardBtn.addEventListener('click', (e) => {
 			e.stopPropagation();
-			this.deleteCard(colIndex, cardIndex);
+			void this.deleteCard(colIndex, cardIndex);
 		});
 
 		titleEl.addEventListener('click', (e) => {
@@ -619,7 +621,7 @@ export class KanbanView extends ItemView {
 					const input = cb as HTMLInputElement;
 					input.addEventListener('click', (e) => {
 						e.preventDefault();
-						this.toggleCheckbox(colIndex, cardIndex, i);
+						void this.toggleCheckbox(colIndex, cardIndex, i);
 					});
 				});
 
@@ -737,7 +739,7 @@ export class KanbanView extends ItemView {
 			if (!this.dragState || this.dragState.type !== 'card') return;
 			if (this.dragState.swimlaneIndex !== swimlaneIndex) return;
 
-			const cards = Array.from(bodyEl.querySelectorAll('.kanban-card:not(.dragging)')) as HTMLElement[];
+			const cards = Array.from(bodyEl.querySelectorAll<HTMLElement>('.kanban-card:not(.dragging)'));
 			let targetIndex: number;
 
 			if (cards.length === 0) {
@@ -806,7 +808,7 @@ export class KanbanView extends ItemView {
 
 			this.removePlaceholder();
 
-			const columns = Array.from(boardEl.querySelectorAll('.kanban-column:not(.dragging)')) as HTMLElement[];
+			const columns = Array.from(boardEl.querySelectorAll<HTMLElement>('.kanban-column:not(.dragging)'));
 			let insertBefore: Element | null = null;
 
 			for (const col of columns) {
@@ -840,7 +842,7 @@ export class KanbanView extends ItemView {
 			if (!this.dragState || this.dragState.type !== 'column') return;
 			e.preventDefault();
 
-			const columns = Array.from(boardEl.querySelectorAll('.kanban-column:not(.dragging)')) as HTMLElement[];
+			const columns = Array.from(boardEl.querySelectorAll<HTMLElement>('.kanban-column:not(.dragging)'));
 			let targetIndex = this.board.columns.length;
 
 			for (const col of columns) {
@@ -884,8 +886,8 @@ export class KanbanView extends ItemView {
 		}
 
 		targetColumn.cards.splice(toIndex, 0, card);
-		this.saveBoard();
-		this.render();
+		void this.saveBoard();
+		void this.render();
 	}
 
 	private moveColumn(fromIndex: number, toIndex: number): void {
@@ -900,8 +902,8 @@ export class KanbanView extends ItemView {
 		}
 
 		this.board.columns.splice(toIndex, 0, column);
-		this.saveBoard();
-		this.render();
+		void this.saveBoard();
+		void this.render();
 	}
 
 	private async toggleCheckbox(colIndex: number, cardIndex: number, checkboxIndex: number): Promise<void> {
@@ -954,7 +956,7 @@ export class KanbanView extends ItemView {
 		await this.saveBoard();
 		await this.render();
 		// Scroll to the new column
-		const boardEl = this.contentEl.querySelector('.kanban-board') as HTMLElement | null;
+		const boardEl = this.contentEl.querySelector<HTMLElement>('.kanban-board');
 		if (boardEl) boardEl.scrollLeft = boardEl.scrollWidth;
 	}
 
@@ -1015,14 +1017,14 @@ export class KanbanView extends ItemView {
 			await this.render();
 		};
 
-		input.addEventListener('blur', () => save());
+		input.addEventListener('blur', () => void save());
 		input.addEventListener('keydown', (e) => {
 			if (e.key === 'Enter') {
 				e.preventDefault();
 				input.blur();
 			} else if (e.key === 'Escape') {
 				saved = true;
-				this.render();
+				void this.render();
 			}
 		});
 		input.addEventListener('click', (e) => e.stopPropagation());
@@ -1060,14 +1062,14 @@ export class KanbanView extends ItemView {
 			await this.render();
 		};
 
-		input.addEventListener('blur', () => save());
+		input.addEventListener('blur', () => void save());
 		input.addEventListener('keydown', (e) => {
 			if (e.key === 'Enter') {
 				e.preventDefault();
 				input.blur();
 			} else if (e.key === 'Escape') {
 				saved = true;
-				this.render();
+				void this.render();
 			}
 		});
 		input.addEventListener('click', (e) => e.stopPropagation());
@@ -1094,8 +1096,8 @@ export class KanbanView extends ItemView {
 		textarea.focus();
 
 		const autoResize = () => {
-			textarea.style.height = 'auto';
-			textarea.style.height = textarea.scrollHeight + 'px';
+			textarea.style.setProperty('height', 'auto');
+			textarea.style.setProperty('height', textarea.scrollHeight + 'px');
 		};
 		autoResize();
 		textarea.addEventListener('input', autoResize);
@@ -1121,7 +1123,7 @@ export class KanbanView extends ItemView {
 			await this.render();
 		};
 
-		textarea.addEventListener('blur', () => save());
+		textarea.addEventListener('blur', () => void save());
 		textarea.addEventListener('keydown', (e) => {
 			if (e.key === 'Enter') {
 				const pos = textarea.selectionStart;
@@ -1149,7 +1151,7 @@ export class KanbanView extends ItemView {
 				}
 			} else if (e.key === 'Escape') {
 				saved = true;
-				this.render();
+				void this.render();
 			}
 		});
 		textarea.addEventListener('click', (e) => e.stopPropagation());
@@ -1168,9 +1170,9 @@ export class KanbanView extends ItemView {
 		const newBody = displayBody ? displayBody + '\n- [ ] ' : '- [ ] ';
 
 		// Find or create body element to start editing
-		let bodyEl = cardEl.querySelector('.kanban-card-body') as HTMLElement | null;
+		let bodyEl = cardEl.querySelector<HTMLElement>('.kanban-card-body');
 		if (!bodyEl) {
-			bodyEl = cardEl.querySelector('.kanban-card-body-placeholder') as HTMLElement | null;
+			bodyEl = cardEl.querySelector<HTMLElement>('.kanban-card-body-placeholder');
 		}
 		if (!bodyEl) {
 			bodyEl = cardEl.createDiv({cls: 'kanban-card-body'});
@@ -1188,8 +1190,8 @@ export class KanbanView extends ItemView {
 		textarea.selectionStart = textarea.selectionEnd = textarea.value.length;
 
 		const autoResize = () => {
-			textarea.style.height = 'auto';
-			textarea.style.height = textarea.scrollHeight + 'px';
+			textarea.style.setProperty('height', 'auto');
+			textarea.style.setProperty('height', textarea.scrollHeight + 'px');
 		};
 		autoResize();
 		textarea.addEventListener('input', autoResize);
@@ -1215,7 +1217,7 @@ export class KanbanView extends ItemView {
 			await this.render();
 		};
 
-		textarea.addEventListener('blur', () => save());
+		textarea.addEventListener('blur', () => void save());
 		textarea.addEventListener('keydown', (e) => {
 			if (e.key === 'Enter') {
 				const pos = textarea.selectionStart;
@@ -1241,7 +1243,7 @@ export class KanbanView extends ItemView {
 				}
 			} else if (e.key === 'Escape') {
 				saved = true;
-				this.render();
+				void this.render();
 			}
 		});
 		textarea.addEventListener('click', (e) => e.stopPropagation());
@@ -1295,8 +1297,8 @@ export class KanbanView extends ItemView {
 	): void {
 		const color = this.getLabelColor(tag);
 		const labelEl = container.createDiv({cls: 'kanban-label'});
-		labelEl.style.backgroundColor = color;
-		labelEl.style.color = this.getContrastColor(color);
+		labelEl.style.setProperty('--label-bg', color);
+		labelEl.style.setProperty('--label-color', this.getContrastColor(color));
 
 		const nameSpan = labelEl.createSpan({cls: 'kanban-label-name', text: tag});
 
@@ -1304,7 +1306,7 @@ export class KanbanView extends ItemView {
 		deleteBtn.setText('\u00D7');
 		deleteBtn.addEventListener('click', (e) => {
 			e.stopPropagation();
-			this.removeLabelFromCard(colIndex, cardIndex, card, tag);
+			void this.removeLabelFromCard(colIndex, cardIndex, card, tag);
 		});
 
 		nameSpan.addEventListener('click', (e) => {
@@ -1321,17 +1323,17 @@ export class KanbanView extends ItemView {
 		return luminance > 0.55 ? '#000000' : '#ffffff';
 	}
 
-	private async addLabelToCard(colIndex: number, cardIndex: number, card: KanbanCard, cardEl: HTMLElement): Promise<void> {
-		const labelsEl = cardEl.querySelector('.kanban-card-labels') as HTMLElement | null;
+	private addLabelToCard(colIndex: number, cardIndex: number, card: KanbanCard, cardEl: HTMLElement): void {
+		const labelsEl = cardEl.querySelector<HTMLElement>('.kanban-card-labels');
 		if (!labelsEl) return;
-		const addBtn = labelsEl.querySelector('.kanban-label-add') as HTMLElement | null;
+		const addBtn = labelsEl.querySelector<HTMLElement>('.kanban-label-add');
 		if (!addBtn || labelsEl.querySelector('.kanban-label-new-input')) return;
 
-		addBtn.style.display = 'none';
+		addBtn.addClass('kanban-hidden');
 
 		const input = document.createElement('input');
 		input.type = 'text';
-		input.placeholder = 'label name';
+		input.placeholder = 'Label name';
 		input.className = 'kanban-label-new-input';
 		labelsEl.appendChild(input);
 		input.focus();
@@ -1356,10 +1358,10 @@ export class KanbanView extends ItemView {
 			await this.render();
 		};
 
-		input.addEventListener('blur', () => finish(true));
+		input.addEventListener('blur', () => void finish(true));
 		input.addEventListener('keydown', (e) => {
 			if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
-			else if (e.key === 'Escape') { finish(false); }
+			else if (e.key === 'Escape') { void finish(false); }
 		});
 		input.addEventListener('click', (e) => e.stopPropagation());
 	}
@@ -1398,8 +1400,7 @@ export class KanbanView extends ItemView {
 
 		labelEl.empty();
 		labelEl.appendChild(editContainer);
-		labelEl.style.backgroundColor = 'var(--background-primary)';
-		labelEl.style.color = '';
+		labelEl.addClass('kanban-label-editing');
 		nameInput.focus();
 		nameInput.select();
 
@@ -1438,18 +1439,18 @@ export class KanbanView extends ItemView {
 			// Only save when focus leaves both inputs
 			const related = e.relatedTarget as HTMLElement | null;
 			if (related && editContainer.contains(related)) return;
-			save();
+			void save();
 		};
 
 		nameInput.addEventListener('blur', handleBlur);
 		colorInput.addEventListener('blur', handleBlur);
 		nameInput.addEventListener('keydown', (e) => {
-			if (e.key === 'Enter') { e.preventDefault(); nameInput.blur(); colorInput.blur(); save(); }
-			else if (e.key === 'Escape') { saved = true; this.render(); }
+			if (e.key === 'Enter') { e.preventDefault(); nameInput.blur(); colorInput.blur(); void save(); }
+			else if (e.key === 'Escape') { saved = true; void this.render(); }
 		});
 		colorInput.addEventListener('change', () => {
 			// Live preview: update label background as user picks color
-			labelEl.style.backgroundColor = colorInput.value;
+			labelEl.style.setProperty('--label-bg', colorInput.value);
 		});
 		nameInput.addEventListener('click', (e) => e.stopPropagation());
 		colorInput.addEventListener('click', (e) => e.stopPropagation());
@@ -1482,7 +1483,7 @@ export class KanbanView extends ItemView {
 
 		// Match quoted paths (with spaces allowed) or unquoted paths (no spaces)
 		// Group 1: quote char, Group 2: quoted path, Group 3: unquoted Windows path, Group 4: unquoted Unix path
-		const pathRegex = /(?:(["'])(([A-Za-z]:[\\\/][^"'<>*?|]*[^"'<>*?|\s])|\/(?:[\w. -]+\/)+[\w.-]+)\1)|([A-Za-z]:[\\\/][^\s<>"'*?|]+)|(?:\/(?:[\w.-]+\/)+[\w.-]+)/g;
+		const pathRegex = /(?:(["'])(([A-Za-z]:[\\/][^"'<>*?|]*[^"'<>*?|\s])|\/(?:[\w. -]+\/)+[\w.-]+)\1)|([A-Za-z]:[\\/][^\s<>"'*?|]+)|(?:\/(?:[\w.-]+\/)+[\w.-]+)/g;
 
 		for (const textNode of textNodes) {
 			if (textNode.parentElement?.closest('a, code, pre')) continue;
@@ -1545,22 +1546,29 @@ export class KanbanView extends ItemView {
 
 	private openOsPath(pathStr: string): void {
 		// Use Electron shell to open the path natively (works for files and folders)
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		const electron = (window as any).require?.('electron');
-		if (electron?.remote?.shell) {
-			electron.remote.shell.openPath(pathStr);
-		} else if (electron?.shell) {
-			electron.shell.openPath(pathStr);
-		} else {
-			// Fallback: open as file:// URI
-			let fileUri: string;
-			if (/^[A-Za-z]:/.test(pathStr)) {
-				fileUri = 'file:///' + pathStr.replace(/\\/g, '/');
-			} else {
-				fileUri = 'file://' + pathStr;
+		interface ElectronShell { openPath(path: string): void }
+		interface ElectronModule { shell?: ElectronShell; remote?: { shell: ElectronShell } }
+
+		const globalObj = globalThis as Record<string, unknown>;
+		if (typeof globalObj.require === 'function') {
+			const electron = (globalObj.require as (id: string) => ElectronModule)('electron');
+			if (electron?.remote?.shell) {
+				electron.remote.shell.openPath(pathStr);
+				return;
 			}
-			window.open(fileUri);
+			if (electron?.shell) {
+				electron.shell.openPath(pathStr);
+				return;
+			}
 		}
+		// Fallback: open as file:// URI
+		let fileUri: string;
+		if (/^[A-Za-z]:/.test(pathStr)) {
+			fileUri = 'file:///' + pathStr.replace(/\\/g, '/');
+		} else {
+			fileUri = 'file://' + pathStr;
+		}
+		window.open(fileUri);
 	}
 
 	private getDisplayBody(rawLines: string[]): string {
